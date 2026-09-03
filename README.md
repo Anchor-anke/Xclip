@@ -9,8 +9,7 @@
 > [AI交流群|OneClip剪贴板](https://qm.qq.com/q/xiImGHVMcM) | [TG 群组](https://t.me/+I7S6R0pw5180YzRl)  
 
 > [!TIP]
-> 🌟 OneClip早期源码已开源在 [src/](https://github.com/One-Clip/OneClip/tree/main/src) 目录，可自行下载构建。我**完整开源**了剪贴板核心机制，希望同行仅将其作为技术参考，UI 与产品体验自行打磨。也建议开发同类产品前先做足调研、谨慎入局，三思而后行。         
-> 
+> 🌟 OneClip早期代码已开源在 [src/](https://github.com/One-Clip/OneClip/tree/main/src) 目录，可自行下载构建。我**完整开源**了剪贴板核心机制，希望同行仅将其作为技术参考，UI 与产品交互体验自行打磨。也建议开发同类产品前先做足调研，三思而后行。
 
 
 <div align="center">
@@ -81,10 +80,12 @@ OneClip 是一款专为 macOS 打造的**专业级剪贴板管理工具**。采�
 - **更多功能**：等你来发现
 
 
-![img1.png](https://cdn.nodeimage.com/i/eYSz3X0E6J8JZl3wGXF3KecrbHCFhz2O.webp)  
+![img1.png](https://i.imgant.com/v2/kJJhzNM.png)  
 ![img2.png](https://s1.imagehub.cc/images/2026/01/12/a26a96c52c6a0629979cffe671bf8d27.png)
 ![img3.png](https://i.imgant.com/v2/Zn6arLh.png)
-![img4.png](https://s1.imagehub.cc/images/2026/02/06/9e116bd44476ce5d599f9d5a022fc3ce.png)
+![](https://picx.zhimg.com/80/v2-835b6c949c6046e2d582bdfb5a88b171_1440w.webp)
+![](https://pic1.zhimg.com/80/v2-e4337768f58b7790abcc319b961e7a34_1440w.webp)
+![img4.png](https://pic1.zhimg.com/80/v2-77b506bc307ef998e6fba7ab30e7a700_1440w.webp)
 
 
 
@@ -434,7 +435,6 @@ open dist/OneClip.app
 
 **购买方式**：
 - 官网购买：https://oneclip.cloud/purchase/lifetime
-- 使用优惠码：`OneClip2026`（5¥减免）
 
 **激活方式**：
 1. 打开 OneClip 设置 → 激活
@@ -469,7 +469,7 @@ open dist/OneClip.app
 - [x] 脚本系统 
 - [x] 密码保护
 - [x] 截图功能
-- [x] 拖拽排序(2026/8/8)
+- [x] 拖拽排序
 
 ### 🚧 进行中
 

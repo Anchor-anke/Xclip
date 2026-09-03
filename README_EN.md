@@ -76,10 +76,12 @@ OneClip is a **professional clipboard manager** built for macOS. It uses **100% 
 - **PopClip**: PopClip-style selection menu — show a quick-action menu at the cursor after selecting text
 - **More features**: Waiting for you to discover
 
-![img1.png](https://cdn.nodeimage.com/i/eYSz3X0E6J8JZl3wGXF3KecrbHCFhz2O.webp)  
+![img1.png](https://i.imgant.com/v2/kJJhzNM.png)  
 ![img2.png](https://s1.imagehub.cc/images/2026/01/12/a26a96c52c6a0629979cffe671bf8d27.png)
 ![img3.png](https://i.imgant.com/v2/Zn6arLh.png)
-![img4.png](https://s1.imagehub.cc/images/2026/02/06/9e116bd44476ce5d599f9d5a022fc3ce.png)
+![](https://picx.zhimg.com/80/v2-835b6c949c6046e2d582bdfb5a88b171_1440w.webp)
+![](https://pic1.zhimg.com/80/v2-e4337768f58b7790abcc319b961e7a34_1440w.webp)
+![img4.png](https://pic1.zhimg.com/80/v2-77b506bc307ef998e6fba7ab30e7a700_1440w.webp)
 
 
 
@@ -414,7 +416,6 @@ If it still fails:
 
 **Purchase**:
 - https://oneclip.cloud/purchase/lifetime
-- Discount code: `OneClip2026` (¥5 off)
 
 **Activate**:
 1. OneClip Settings → Activate
