@@ -467,8 +467,9 @@ open dist/OneClip.app
 - [x] UI/UX 改进
 - [x] 脚本系统 
 - [x] 密码保护
-- [x] 截图功能
+- [x] 截图功能（2.0.0之后版本）
 - [x] 拖拽排序
+- [x] 录屏/录音功能（2.1.0之后版本）
 
 ### 🚧 进行中
 
@@ -476,7 +477,7 @@ open dist/OneClip.app
 
 ### 📋 计划中
 
-- [ ] 插件系统
+- [ ] 暂无
 
 💡 有功能建议？欢迎在 [GitHub Discussions](https://github.com/One-Clip/OneClip/discussions) 提出！
 
@@ -536,6 +537,7 @@ open dist/OneClip.app
 - [Syncthing](https://syncthing.net/) - 开源文件同步工具
 - [Ollama](https://ollama.ai/) - 本地 AI 模型运行环境
 - [capcap](https://github.com/realskyrin/capcap) - macOS 截图工具
+- [QuickRecorder](https://github.com/lihaoyun6/QuickRecorder) -基于 ScreenCapture Kit 的轻量化多功能 macOS 录屏工具
 
 感谢所有用户的支持和反馈！🎉
   

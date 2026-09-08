@@ -9,14 +9,14 @@
 > [OneClip QQ Group](https://qm.qq.com/q/xiImGHVMcM) | [Telegram Group](https://t.me/+I7S6R0pw5180YzRl)
 
 > [!TIP]
-> 🌟 Early first-edition source code is open at [src/](https://github.com/One-Clip/OneClip/tree/main/src). You can download and build it yourself. I have **fully open-sourced** the core clipboard mechanism, and I hope fellow developers use the core mechanism only as a reference and polish their own UI. Before building similar products, please do your research first and then vibe coding — think twice before you act.  
+> 🌟 OneClip's early source code is open at [src/](https://github.com/One-Clip/OneClip/tree/main/src). You can download and build it yourself. I have **fully open-sourced** the core clipboard mechanism, and I hope competing products use it only as a technical reference and build their own UI and interaction experience.
 
 
 <div align="center">
   <img src="https://picx.zhimg.com/80/v2-34b000e56d1af7ef61092dcd031dfd9a_1440w.webp?source=2c26e567" alt="OneClip Logo" width="120" height="120">
   <h1>OneClip</h1>
   <p><strong>A simple, professional clipboard manager for macOS</strong></p>
-  <p>🚀 Efficient · 🎨 Modern · ⚡️ Smooth · 🔒 Secure</p>
+  <p>⚡️ Lightning-fast · 🪶 Lightweight · 🔒 Private · 🤖 Smart</p>
 </div>
 
 <p align="center">
@@ -27,7 +27,8 @@
   <img src="https://img.shields.io/badge/Swift-5.9%2B-F05138?style=for-the-badge&logo=swift&logoColor=white" alt="Swift 5.9+" />
   <img src="https://img.shields.io/badge/Privacy-Local%20Storage-green?style=for-the-badge" alt="Privacy Local Storage" />
   <a href="https://github.com/One-Clip/OneClip/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="MIT License" /></a>
-  <a href="https://qm.qq.com/q/xiImGHVMcM"><img src="https://img.shields.io/badge/QQ%20Group-1060157293-0084ff?style=for-the-badge&logo=qq&logoColor=white" alt="QQ Group" /></a>
+  <a href="https://qm.qq.com/q/xiImGHVMcM"><img src="https://img.shields.io/badge/QQ%20Group-1060157293-0084ff?style=for-the-badge&logo=qq&logoColor=white" alt="QQ Group" style="border-radius: 8px;" /></a>
+  <a href="https://t.me/+I7S6R0pw5180YzRl"><img src="https://img.shields.io/badge/Telegram-%40OneClip-26a5e4?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram Group" style="border-radius: 8px;" /></a>
   <a href="https://space.bilibili.com/1407028951/lists/5012369?type=series">
     <img src="https://img.shields.io/badge/Video%20Tutorials-6366f1?style=for-the-badge" alt="Video Tutorials">
   </a>
@@ -82,8 +83,6 @@ OneClip is a **professional clipboard manager** built for macOS. It uses **100% 
 ![](https://picx.zhimg.com/80/v2-835b6c949c6046e2d582bdfb5a88b171_1440w.webp)
 ![](https://pic1.zhimg.com/80/v2-e4337768f58b7790abcc319b961e7a34_1440w.webp)
 ![img4.png](https://pic1.zhimg.com/80/v2-77b506bc307ef998e6fba7ab30e7a700_1440w.webp)
-
-
 
 ## Download & Install
 
