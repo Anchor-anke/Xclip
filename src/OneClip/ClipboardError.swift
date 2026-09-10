@@ -11,32 +11,32 @@ enum ClipboardError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .accessDenied:
-            return "剪贴板访问被拒绝"
+            return AppLanguage.text("剪贴板访问被拒绝", "Clipboard access was denied")
         case .dataCorrupted:
-            return "剪贴板数据损坏"
+            return AppLanguage.text("剪贴板数据损坏", "Clipboard data is damaged")
         case .storageFailure:
-            return "存储操作失败"
+            return AppLanguage.text("存储操作失败", "Storage operation failed")
         case .imageProcessingFailed:
-            return "图像处理失败"
+            return AppLanguage.text("图像处理失败", "Image processing failed")
         case .permissionRequired:
-            return "需要辅助功能权限"
+            return AppLanguage.text("需要辅助功能权限", "Accessibility permission is required")
         case .fileOperationFailed:
-            return "文件操作失败"
+            return AppLanguage.text("文件操作失败", "File operation failed")
         }
     }
     
     var recoverySuggestion: String? {
         switch self {
         case .accessDenied, .permissionRequired:
-            return "请在系统设置中授予应用权限"
+            return AppLanguage.text("请在系统设置中授予应用权限", "Grant the app permission in System Settings")
         case .dataCorrupted:
-            return "请重新复制内容"
+            return AppLanguage.text("请重新复制内容", "Copy the content again")
         case .storageFailure:
-            return "请检查磁盘空间"
+            return AppLanguage.text("请检查磁盘空间", "Check available disk space")
         case .imageProcessingFailed:
-            return "请尝试复制其他格式的图片"
+            return AppLanguage.text("请尝试复制其他格式的图片", "Try copying an image in a different format")
         case .fileOperationFailed:
-            return "请检查文件是否存在且有权限访问"
+            return AppLanguage.text("请检查文件是否存在且有权限访问", "Check that the file exists and you have permission to access it")
         }
     }
 }

@@ -39,37 +39,50 @@ extension ClipboardItemType {
     var displayName: String {
         switch self {
         case .text:
-            return "文本"
+            return AppLanguage.text("文本", "Text")
         case .image:
-            return "图片"
+            return AppLanguage.text("图片", "Image")
         case .file:
-            return "文件"
+            return AppLanguage.text("文件", "File")
         case .video:
-            return "视频"
+            return AppLanguage.text("视频", "Video")
         case .audio:
-            return "音频"
+            return AppLanguage.text("音频", "Audio")
         case .document:
-            return "文档"
+            return AppLanguage.text("文档", "Document")
         case .code:
-            return "代码"
+            return AppLanguage.text("代码", "Code")
         case .archive:
-            return "压缩包"
+            return AppLanguage.text("压缩包", "Archive")
         case .executable:
-            return "应用程序"
+            return AppLanguage.text("应用程序", "Application")
         }
     }
 }
 
 struct ClipboardItem: Identifiable, Codable, Equatable {
     let id: UUID
-    let content: String
+    var content: String
     let type: ClipboardItemType
     let timestamp: Date
     var data: Data?
-    var filePath: String? // 新增：文件存储路径
-    var isFavorite: Bool // 新增：收藏状态
-    
-    init(id: UUID, content: String, type: ClipboardItemType, timestamp: Date, data: Data? = nil, filePath: String? = nil, isFavorite: Bool = false) {
+    var filePath: String?
+    var isFavorite: Bool
+    var isPinned: Bool
+    /// Application bundle identifier observed when the clipboard change was captured.
+    var sourceApp: String?
+    /// Capture-time display name remains readable when the application is no longer installed.
+    var sourceAppName: String?
+    var tags: [String]
+    /// Raw pasteboard representations preserve rich text and application-specific formats.
+    var representations: [String: Data]?
+    /// Paths to independently retained files; multiple files keep their original names.
+    var fileURLs: [String]?
+
+    init(id: UUID, content: String, type: ClipboardItemType, timestamp: Date,
+         data: Data? = nil, filePath: String? = nil, isFavorite: Bool = false,
+         isPinned: Bool = false, sourceApp: String? = nil, sourceAppName: String? = nil, tags: [String] = [],
+         representations: [String: Data]? = nil, fileURLs: [String]? = nil) {
         self.id = id
         self.content = content
         self.type = type
@@ -77,58 +90,71 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         self.data = data
         self.filePath = filePath
         self.isFavorite = isFavorite
+        self.isPinned = isPinned
+        self.sourceApp = sourceApp
+        self.sourceAppName = sourceAppName
+        self.tags = tags
+        self.representations = representations
+        self.fileURLs = fileURLs
     }
-    
-    // 用于 Codable 的自定义编码
+
+    /// Localize the generated image label without changing stored content or clipboard bytes.
+    var displayContent: String {
+        type == .image && content == "Image" ? AppLanguage.text("图片", "Image") : content
+    }
+
     enum CodingKeys: String, CodingKey {
-        case id
-        case content
-        case type
-        case timestamp
-        case data
-        case filePath
-        case isFavorite
+        case id, content, type, timestamp, data, filePath, isFavorite
+        case isPinned, sourceApp, sourceAppName, tags, representations, fileURLs
     }
-    
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         content = try container.decode(String.self, forKey: .content)
         type = try container.decode(ClipboardItemType.self, forKey: .type)
-        
-        // 处理 Date 的 JSON 序列化
         if let dateString = try? container.decode(String.self, forKey: .timestamp) {
-            // 如果是字符串格式，尝试解析
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            timestamp = formatter.date(from: dateString) ?? Date()
-        } else if let timeInterval = try? container.decode(Double.self, forKey: .timestamp) {
-            // 如果是时间戳格式
-            timestamp = Date(timeIntervalSince1970: timeInterval)
+            let fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            guard let date = fractional.date(from: dateString) ?? ISO8601DateFormatter().date(from: dateString) else {
+                throw DecodingError.dataCorruptedError(forKey: .timestamp, in: container, debugDescription: "Invalid item timestamp")
+            }
+            timestamp = date
         } else {
-            // 默认使用当前时间
-            timestamp = Date()
+            // The original OneClip schema writes ISO dates and accepts Unix seconds.
+            let seconds = try container.decode(Double.self, forKey: .timestamp)
+            guard seconds.isFinite else {
+                throw DecodingError.dataCorruptedError(forKey: .timestamp, in: container, debugDescription: "Invalid item timestamp")
+            }
+            timestamp = Date(timeIntervalSince1970: seconds)
         }
-        
-        data = try container.decode(Data?.self, forKey: .data)
+        data = try container.decodeIfPresent(Data.self, forKey: .data)
         filePath = try container.decodeIfPresent(String.self, forKey: .filePath)
         isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        sourceApp = try container.decodeIfPresent(String.self, forKey: .sourceApp)
+        sourceAppName = try container.decodeIfPresent(String.self, forKey: .sourceAppName)
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        representations = try container.decodeIfPresent([String: Data].self, forKey: .representations)
+        fileURLs = try container.decodeIfPresent([String].self, forKey: .fileURLs)
     }
-    
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(content, forKey: .content)
         try container.encode(type, forKey: .type)
-        
-        // 将 Date 转换为 ISO8601 字符串格式
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let dateString = formatter.string(from: timestamp)
-        try container.encode(dateString, forKey: .timestamp)
-        
-        try container.encode(data, forKey: .data)
+        try container.encode(formatter.string(from: timestamp), forKey: .timestamp)
+        try container.encodeIfPresent(data, forKey: .data)
         try container.encodeIfPresent(filePath, forKey: .filePath)
         try container.encode(isFavorite, forKey: .isFavorite)
+        try container.encode(isPinned, forKey: .isPinned)
+        try container.encodeIfPresent(sourceApp, forKey: .sourceApp)
+        try container.encodeIfPresent(sourceAppName, forKey: .sourceAppName)
+        try container.encode(tags, forKey: .tags)
+        try container.encodeIfPresent(representations, forKey: .representations)
+        try container.encodeIfPresent(fileURLs, forKey: .fileURLs)
     }
 }

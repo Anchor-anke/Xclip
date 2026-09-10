@@ -1,75 +1,49 @@
-# OneClip 源码构建指南
+# Xclip 源码
 
-这是 OneClip 的开源代码，基于文件系统存储。
+Xclip 使用 SwiftUI、AppKit、SQLite 及 macOS 系统框架。产品功能见[项目说明](../README.md)，完整构建、权限、测试和隔离运行说明见[开发指南](../docs/BUILDING.md)。
 
-## 系统要求
+## 构建与运行
 
-- **macOS** 14.0+
-- **Xcode** 15.0+
-- **Swift** 5.0+
+运行需要 macOS 14.0 或更高版本。构建需要包含 macOS 26 SDK 的 Xcode，以及 Python 3；原生 Liquid Glass 在较早的 macOS 上使用兼容材质。
 
-## 快速构建
-
-### 方式一：使用构建脚本（推荐）
+以下命令从仓库根目录执行：
 
 ```bash
-chmod +x build.sh
-./build.sh
+./src/build.sh
+open src/dist/Xclip.app
 ```
 
-构建完成后，应用位于 `dist/OneClip.app`。
+脚本默认执行 Release 构建，生成 Apple Silicon / Intel 通用应用，包含 `Xclip` 主程序与 JavaScript helper。未指定签名身份时使用 ad-hoc 签名。调试构建使用 `CONFIGURATION=Debug ./src/build.sh`。
 
-### 方式二：使用 Xcode
+在 Xcode 中打开 `src/Xclip.xcodeproj`，选择 `Xclip` scheme 可查看和调试源码。完整应用以 `src/build.sh` 输出为准；该脚本还负责同步源码引用、打包 helper 和验签。构建目录、输出目录及签名身份可分别通过 `XCLIP_DERIVED_DIR`、`XCLIP_OUTPUT_DIR`、`XCLIP_CODE_SIGN_IDENTITY` 配置，对应的 `CCLIP_*` 旧变量继续兼容。
 
-1. 打开 `src/OneClip.xcodeproj`
-2. 选择 `OneClip` scheme
-3. 按 `⌘+B` 构建 或 `⌘+R` 运行
-
-### 方式三：命令行构建
+## 验证与发布
 
 ```bash
-xcodebuild -project OneClip.xcodeproj -scheme OneClip -configuration Release build
+./scripts/test.sh
+./scripts/test-native-language.sh
+./scripts/test-editing-commands.sh
+./scripts/package-release.sh
 ```
 
-## 安装运行
+`test.sh --network` 可增加本机回环收发测试；菜单栏专项与隔离 QA 包的使用方法见[开发指南](../docs/BUILDING.md)。当前测试位于根目录 `tests/` 和由应用内部入口执行的 `src/OneClip/*Tests.swift`。
 
-构建完成后：
+`package-release.sh` 无需参数，读取已构建的 `src/dist/Xclip.app` 版本，将发布 DMG、ZIP 和 `SHA256SUMS` 输出到仓库根目录 `dist/`。0.3.0 使用 ad-hoc 签名，未完成 Apple 公证；安装包生成不改变签名状态，详见[发布指南](../docs/RELEASE.md)。
 
-```bash
-# 复制到应用程序文件夹
-cp -R dist/OneClip.app /Applications/
+## 目录与数据兼容
 
-# 或直接运行
-open dist/OneClip.app
-```
-
-## 项目结构
-
-```
+```text
 src/
-├── OneClip/                 # 主应用源码
-├── OneClip.xcodeproj/       # Xcode 项目文件
-├── OneClipTests/            # 单元测试
-├── OneClipUITests/          # UI 测试
-├── build.sh                 # 构建脚本
-└── dist/                    # 构建输出目录
+├── OneClip/           # 当前应用源码与内部测试入口，保留兼容目录名
+├── Xclip.xcodeproj/   # Xcode 工程，scheme 为 Xclip
+├── build.sh           # 完整应用构建脚本
+└── dist/              # 默认生成 Xclip.app，不提交版本控制
 ```
 
-## 常见问题
+应用沿用 `local.cclip.app` 标识及 `~/Library/Application Support/CClip` 默认数据目录，继续读取原有历史与设置。不要在开发测试中直接操作日常历史；可使用 `./scripts/make-qa-app.sh` 创建独立标识与数据目录的 QA 应用。
 
-### 构建失败：缺少签名
+临时签名重新构建后可能需要为当前应用重新授予屏幕录制权限。对已有图片执行 OCR 不需要屏幕录制权限，自动粘贴等功能需要辅助功能权限，具体处理步骤见开发指南。
 
-如果遇到签名问题，在 Xcode 中：
-1. 选择项目 → Signing & Capabilities
-2. 将 Team 改为 "None" 或你的开发者账号
-3. 取消勾选 "Automatically manage signing"（如需要）
+## 许可
 
-### 运行时提示"已损坏"
-
-```bash
-sudo xattr -rd com.apple.quarantine /Applications/OneClip.app
-```
-
-## 许可证
-
-此早期版本代码仅供学习参考。
+[MIT 许可证](../LICENSE) · [版权声明](../NOTICE.md)

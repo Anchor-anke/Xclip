@@ -25,7 +25,7 @@ class NotificationManager: ObservableObject {
                     print("通知权限已授予")
                 } else {
                     print("通知权限被用户拒绝")
-                    print("提示：请在系统偏好设置 > 通知 > OneClip 中启用通知")
+                    print("提示：请在系统偏好设置 > 通知 > Xclip 中启用通知")
                 }
             }
         }
@@ -74,7 +74,7 @@ class NotificationManager: ObservableObject {
         print("开始发送通知...")
         
         let notificationContent = UNMutableNotificationContent()
-        notificationContent.title = "新的剪贴板内容"
+        notificationContent.title = L("新的剪贴板内容", "New clipboard content")
         notificationContent.body = String(content.prefix(50)) + (content.count > 50 ? "..." : "")
         notificationContent.sound = .default
         

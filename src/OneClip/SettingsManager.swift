@@ -26,7 +26,7 @@ struct AppSettings: Codable {
     
     init() {
         showInDock = false
-        maxItems = 50
+        maxItems = 0
         enableHistoryPersistence = true
         autoStartOnLogin = false
         isFirstLaunch = true
@@ -57,7 +57,7 @@ class SettingsManager: ObservableObject {
         didSet { saveSettings() }
     }
     
-    @Published var maxItems: Int = 50 {
+    @Published var maxItems: Int = 0 {
         didSet { saveSettings() }
     }
     
@@ -68,7 +68,6 @@ class SettingsManager: ObservableObject {
     @Published var autoStartOnLogin: Bool = false {
         didSet { 
             saveSettings()
-            // LaunchAtLoginManager将在OneClipApp中处理
         }
     }
     
@@ -154,7 +153,7 @@ class SettingsManager: ObservableObject {
     private init() {
         // 使用 Application Support 目录
         let appSupportPath = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let oneClipDir = appSupportPath.appendingPathComponent("OneClip")
+        let oneClipDir = StoragePaths.dataDirectory
         
         // 确保目录存在
         try? FileManager.default.createDirectory(at: oneClipDir, withIntermediateDirectories: true, attributes: nil)
@@ -162,7 +161,7 @@ class SettingsManager: ObservableObject {
         settingsURL = oneClipDir.appendingPathComponent("settings.json")
         
         // 执行数据迁移
-        migrateSettingsIfNeeded()
+        // Development build never migrates unrelated Documents/settings.json.
         
         loadSettings()
         
@@ -247,7 +246,7 @@ class SettingsManager: ObservableObject {
         do {
             let data = try JSONEncoder().encode(settings)
             let appSupportPath = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            let oneClipDir = appSupportPath.appendingPathComponent("OneClip")
+            let oneClipDir = StoragePaths.dataDirectory
             let exportURL = oneClipDir.appendingPathComponent("settings_export.json")
             try data.write(to: exportURL)
             return exportURL

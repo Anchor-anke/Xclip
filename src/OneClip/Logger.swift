@@ -29,13 +29,13 @@ enum LogLevel: String, CaseIterable {
 class Logger {
     static let shared = Logger()
     
-    private let subsystem = "com.oneclip.app"
+    private let subsystem = "local.cclip.app"
     private let category = "main"
     private let osLogger: os.Logger
     
     // 控制日志级别
     private var currentLogLevel: LogLevel = .info
-    private var enableConsoleOutput = true
+    private var enableConsoleOutput = false
     private var enableFileLogging = false
     
     private init() {
@@ -44,7 +44,7 @@ class Logger {
         // 在 Debug 模式下启用更详细的日志
         #if DEBUG
         currentLogLevel = .debug
-        enableConsoleOutput = true
+        enableConsoleOutput = false
         #else
         currentLogLevel = .info
         enableConsoleOutput = false
@@ -102,7 +102,7 @@ class Logger {
         }
         
         // 系统日志
-        osLogger.log(level: level.osLogType, "\(message, privacy: .public)")
+        osLogger.log(level: level.osLogType, "\(message, privacy: .private)")
         
         // 文件日志 (如果需要)
         if enableFileLogging {

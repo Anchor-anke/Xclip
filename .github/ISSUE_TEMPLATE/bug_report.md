@@ -24,7 +24,7 @@ assignees: ''
 
 **环境信息**
 - macOS 版本：[如 14.0]
-- OneClip 版本：[如 1.5.0]
+- Xclip 版本：[如 0.3.0]
 - 芯片：[Intel / Apple Silicon]
 
 **错误日志**

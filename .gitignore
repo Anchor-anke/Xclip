@@ -35,6 +35,9 @@ Carthage/Checkouts/
 *.zip
 *.tar.gz
 *.rar
+*.dmg
+*.pkg
+*.app/
 
 # IDE
 .idea/
@@ -48,3 +51,6 @@ licensing-system/
 # Environment
 .env
 .env.local
+*.p12
+*.p8
+*.mobileprovision
