@@ -53,19 +53,19 @@ class Logger {
     
     // MARK: - Public Methods
     
-    func debug(_ message: String, file: String = #file, function: String = #function, line: Int = #line) {
+    func debug(_ message: String, file: String = #fileID, function: String = #function, line: Int = #line) {
         log(.debug, message: message, file: file, function: function, line: line)
     }
     
-    func info(_ message: String, file: String = #file, function: String = #function, line: Int = #line) {
+    func info(_ message: String, file: String = #fileID, function: String = #function, line: Int = #line) {
         log(.info, message: message, file: file, function: function, line: line)
     }
     
-    func warning(_ message: String, file: String = #file, function: String = #function, line: Int = #line) {
+    func warning(_ message: String, file: String = #fileID, function: String = #function, line: Int = #line) {
         log(.warning, message: message, file: file, function: function, line: line)
     }
     
-    func error(_ message: String, file: String = #file, function: String = #function, line: Int = #line) {
+    func error(_ message: String, file: String = #fileID, function: String = #function, line: Int = #line) {
         log(.error, message: message, file: file, function: function, line: line)
     }
     
@@ -171,18 +171,18 @@ extension DateFormatter {
 
 // MARK: - Convenience Global Functions
 
-func logDebug(_ message: String, file: String = #file, function: String = #function, line: Int = #line) {
+func logDebug(_ message: String, file: String = #fileID, function: String = #function, line: Int = #line) {
     Logger.shared.debug(message, file: file, function: function, line: line)
 }
 
-func logInfo(_ message: String, file: String = #file, function: String = #function, line: Int = #line) {
+func logInfo(_ message: String, file: String = #fileID, function: String = #function, line: Int = #line) {
     Logger.shared.info(message, file: file, function: function, line: line)
 }
 
-func logWarning(_ message: String, file: String = #file, function: String = #function, line: Int = #line) {
+func logWarning(_ message: String, file: String = #fileID, function: String = #function, line: Int = #line) {
     Logger.shared.warning(message, file: file, function: function, line: line)
 }
 
-func logError(_ message: String, file: String = #file, function: String = #function, line: Int = #line) {
+func logError(_ message: String, file: String = #fileID, function: String = #function, line: Int = #line) {
     Logger.shared.error(message, file: file, function: function, line: line)
 }

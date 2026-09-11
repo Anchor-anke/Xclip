@@ -31,4 +31,13 @@ if '/* InfoPlist.strings */ = {isa = PBXVariantGroup;' not in s:
     s=s.replace('AA00000429A8B4B800123456 /* Assets.xcassets */,',f'AA00000429A8B4B800123456 /* Assets.xcassets */,\n\t\t\t\t{variant} /* InfoPlist.strings */,')
     s=s.replace('AA00000529A8B4B800123456 /* Assets.xcassets in Resources */,',f'AA00000529A8B4B800123456 /* Assets.xcassets in Resources */,\n\t\t\t\t{build} /* InfoPlist.strings in Resources */,')
     s=s.replace('knownRegions = (\n\t\t\t\ten,','knownRegions = (\n\t\t\t\ten,\n\t\t\t\t"zh-Hans",')
+# Bundle offline formula assets as a folder reference, preserving relative font paths.
+name = 'Formula'
+if 'name = Formula; path = ../Resources/Formula;' not in s:
+    fid = hashlib.sha1(b'folder:Formula').hexdigest()[:24].upper()
+    bid = hashlib.sha1(b'resource:Formula').hexdigest()[:24].upper()
+    s = s.replace('/* End PBXFileReference section */', f'\t\t{fid} /* Formula */ = {{isa = PBXFileReference; lastKnownFileType = folder; name = Formula; path = ../Resources/Formula; sourceTree = "<group>"; }};\n/* End PBXFileReference section */')
+    s = s.replace('/* End PBXBuildFile section */', f'\t\t{bid} /* Formula in Resources */ = {{isa = PBXBuildFile; fileRef = {fid} /* Formula */; }};\n/* End PBXBuildFile section */')
+    s = s.replace('AA00000429A8B4B800123456 /* Assets.xcassets */,', f'AA00000429A8B4B800123456 /* Assets.xcassets */,\n\t\t\t\t{fid} /* Formula */,')
+    s = s.replace('AA00000529A8B4B800123456 /* Assets.xcassets in Resources */,', f'AA00000529A8B4B800123456 /* Assets.xcassets in Resources */,\n\t\t\t\t{bid} /* Formula in Resources */,')
 p.write_text(s)

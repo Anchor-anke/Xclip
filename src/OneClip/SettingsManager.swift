@@ -26,7 +26,7 @@ struct AppSettings: Codable {
     
     init() {
         showInDock = false
-        maxItems = 0
+        maxItems = 100
         enableHistoryPersistence = true
         autoStartOnLogin = false
         isFirstLaunch = true
@@ -57,7 +57,7 @@ class SettingsManager: ObservableObject {
         didSet { saveSettings() }
     }
     
-    @Published var maxItems: Int = 0 {
+    @Published var maxItems: Int = 100 {
         didSet { saveSettings() }
     }
     

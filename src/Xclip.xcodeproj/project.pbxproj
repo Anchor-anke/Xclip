@@ -22,7 +22,6 @@
 		1BD9F7FAA2DF1F9E9A52E320 /* AutomationServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 014D0B1AFCA2C8372A386A07 /* AutomationServices.swift */; };
 		BD7FE4BCED36AB209247FFED /* AutomationToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7458D0C05CD1D33A309D019E /* AutomationToolsView.swift */; };
 		9221C2491C8F4151991ECF9F /* CaptureTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF393A96BBC6F6DDB5629387 /* CaptureTools.swift */; };
-		8631B42EF46F6AC44979B22F /* CaptureToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC3A2970F4096CAC49770152 /* CaptureToolsView.swift */; };
 		EC2C852435E69AE9E2B873D0 /* DesktopServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = C139376191662D446F47BC45 /* DesktopServices.swift */; };
 		471EA7D94108D6CFD1AD3B7D /* HistoryArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 864BAF2854343CDB96C8081D /* HistoryArchive.swift */; };
 		F725C77E824CEB0790938D09 /* ImageEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE29EC896FC4F4EF05848197 /* ImageEditorView.swift */; };
@@ -53,6 +52,22 @@
 		F220AC661ECA76A017FCC531 /* NativeLanguageController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 914A6270293D515F709FC746 /* NativeLanguageController.swift */; };
 		4AB2218BA0D07B910E8FB1FF /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 81C7B96EA3173C0C3B4C8FDC /* InfoPlist.strings */; };
 		37A5C967EC4AACAF0F54199E /* LocalizedEditingCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = C297869EF679638CEEE0AF78 /* LocalizedEditingCommands.swift */; };
+		47D2FABD52CAA80E6640D382 /* CaptureAnnotation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36AF5FDF54153105C7F0D45 /* CaptureAnnotation.swift */; };
+		7230055B7EB4C65398151CF3 /* CaptureAnnotationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11D5895A81D11C5C83D3297 /* CaptureAnnotationOverlay.swift */; };
+		18B41FD0D6FF3956D2FED482 /* ScreenshotCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95F33A72AB9BE7BE6BEAC29C /* ScreenshotCoordinator.swift */; };
+		6B2A9366A44CDEF9402E27AA /* ScreenshotSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602C3DBB809D69909D2508DF /* ScreenshotSession.swift */; };
+		EBFB3E5DDF4274EA1E0FF922 /* CaptureAnnotationOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4DDE66E4C37DE029C0C6AB2 /* CaptureAnnotationOptions.swift */; };
+		18C881A6E1FCD09996C6D0D8 /* CaptureOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E6F3B0390624AE55BDBF58 /* CaptureOutput.swift */; };
+		CC63690084CF1EC5E5658332 /* CaptureRecognition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39FC803FEBD442A4FB26C062 /* CaptureRecognition.swift */; };
+		16C1052A1C8AF971E47432B4 /* CaptureRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249AAA24BE648ADA05DC4C42 /* CaptureRecording.swift */; };
+		7392E547A815975566BC2E92 /* CaptureScrolling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 512D79638B6E1D467692DEC0 /* CaptureScrolling.swift */; };
+		C72332622AD174DFCC28B54E /* CaptureWorkflowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D42554C5ED7F284DB14CE0EC /* CaptureWorkflowCoordinator.swift */; };
+		5FDCDC536ACCA0648B59949A /* PinnedImageController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57627A42755E063114E72094 /* PinnedImageController.swift */; };
+		15A2A56B8EC5EE1EDB3210EB /* Formula in Resources */ = {isa = PBXBuildFile; fileRef = 124435DECD59BE683C090329 /* Formula */; };
+		C0219080D9830AA94E4F0C3E /* CaptureFormulaPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1471965A52A536A3C79F4D4 /* CaptureFormulaPreview.swift */; };
+		A657ABA31E3E87F20D919D4B /* CaptureRecognitionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A627E0001E965A609B19678E /* CaptureRecognitionService.swift */; };
+		D7889FB3CE1C4C4E98B6EF29 /* CaptureRedaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F541438C2A6595BFA2A9264 /* CaptureRedaction.swift */; };
+		F11A0256C882707AC61D091E /* CaptureSelectionOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C072A46FC7A591B286B40F /* CaptureSelectionOptions.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -73,7 +88,6 @@
 		014D0B1AFCA2C8372A386A07 /* AutomationServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationServices.swift; sourceTree = "<group>"; };
 		7458D0C05CD1D33A309D019E /* AutomationToolsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationToolsView.swift; sourceTree = "<group>"; };
 		BF393A96BBC6F6DDB5629387 /* CaptureTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureTools.swift; sourceTree = "<group>"; };
-		CC3A2970F4096CAC49770152 /* CaptureToolsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureToolsView.swift; sourceTree = "<group>"; };
 		C139376191662D446F47BC45 /* DesktopServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopServices.swift; sourceTree = "<group>"; };
 		864BAF2854343CDB96C8081D /* HistoryArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryArchive.swift; sourceTree = "<group>"; };
 		BE29EC896FC4F4EF05848197 /* ImageEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEditorView.swift; sourceTree = "<group>"; };
@@ -105,6 +119,22 @@
 		900BF1F5CAC7C3AD1DF160B6 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		C9732F8AE8232F22F7A68898 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		C297869EF679638CEEE0AF78 /* LocalizedEditingCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizedEditingCommands.swift; sourceTree = "<group>"; };
+		C36AF5FDF54153105C7F0D45 /* CaptureAnnotation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureAnnotation.swift; sourceTree = "<group>"; };
+		A11D5895A81D11C5C83D3297 /* CaptureAnnotationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureAnnotationOverlay.swift; sourceTree = "<group>"; };
+		95F33A72AB9BE7BE6BEAC29C /* ScreenshotCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotCoordinator.swift; sourceTree = "<group>"; };
+		602C3DBB809D69909D2508DF /* ScreenshotSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotSession.swift; sourceTree = "<group>"; };
+		B4DDE66E4C37DE029C0C6AB2 /* CaptureAnnotationOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureAnnotationOptions.swift; sourceTree = "<group>"; };
+		67E6F3B0390624AE55BDBF58 /* CaptureOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureOutput.swift; sourceTree = "<group>"; };
+		39FC803FEBD442A4FB26C062 /* CaptureRecognition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureRecognition.swift; sourceTree = "<group>"; };
+		249AAA24BE648ADA05DC4C42 /* CaptureRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureRecording.swift; sourceTree = "<group>"; };
+		512D79638B6E1D467692DEC0 /* CaptureScrolling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureScrolling.swift; sourceTree = "<group>"; };
+		D42554C5ED7F284DB14CE0EC /* CaptureWorkflowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureWorkflowCoordinator.swift; sourceTree = "<group>"; };
+		57627A42755E063114E72094 /* PinnedImageController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedImageController.swift; sourceTree = "<group>"; };
+		124435DECD59BE683C090329 /* Formula */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Formula; path = ../Resources/Formula; sourceTree = "<group>"; };
+		C1471965A52A536A3C79F4D4 /* CaptureFormulaPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureFormulaPreview.swift; sourceTree = "<group>"; };
+		A627E0001E965A609B19678E /* CaptureRecognitionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureRecognitionService.swift; sourceTree = "<group>"; };
+		7F541438C2A6595BFA2A9264 /* CaptureRedaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureRedaction.swift; sourceTree = "<group>"; };
+		A2C072A46FC7A591B286B40F /* CaptureSelectionOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureSelectionOptions.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -138,6 +168,21 @@
 			isa = PBXGroup;
 			children = (
 				AA00000029A8B4B700123456 /* OneClipApp.swift */,
+				A2C072A46FC7A591B286B40F /* CaptureSelectionOptions.swift */,
+				7F541438C2A6595BFA2A9264 /* CaptureRedaction.swift */,
+				A627E0001E965A609B19678E /* CaptureRecognitionService.swift */,
+				C1471965A52A536A3C79F4D4 /* CaptureFormulaPreview.swift */,
+				57627A42755E063114E72094 /* PinnedImageController.swift */,
+				D42554C5ED7F284DB14CE0EC /* CaptureWorkflowCoordinator.swift */,
+				512D79638B6E1D467692DEC0 /* CaptureScrolling.swift */,
+				249AAA24BE648ADA05DC4C42 /* CaptureRecording.swift */,
+				39FC803FEBD442A4FB26C062 /* CaptureRecognition.swift */,
+				67E6F3B0390624AE55BDBF58 /* CaptureOutput.swift */,
+				B4DDE66E4C37DE029C0C6AB2 /* CaptureAnnotationOptions.swift */,
+				602C3DBB809D69909D2508DF /* ScreenshotSession.swift */,
+				95F33A72AB9BE7BE6BEAC29C /* ScreenshotCoordinator.swift */,
+				A11D5895A81D11C5C83D3297 /* CaptureAnnotationOverlay.swift */,
+				C36AF5FDF54153105C7F0D45 /* CaptureAnnotation.swift */,
 				C297869EF679638CEEE0AF78 /* LocalizedEditingCommands.swift */,
 				914A6270293D515F709FC746 /* NativeLanguageController.swift */,
 				50766C919F2B7A40FD373842 /* LanguageTests.swift */,
@@ -167,7 +212,6 @@
 				BE29EC896FC4F4EF05848197 /* ImageEditorView.swift */,
 				864BAF2854343CDB96C8081D /* HistoryArchive.swift */,
 				C139376191662D446F47BC45 /* DesktopServices.swift */,
-				CC3A2970F4096CAC49770152 /* CaptureToolsView.swift */,
 				BF393A96BBC6F6DDB5629387 /* CaptureTools.swift */,
 				7458D0C05CD1D33A309D019E /* AutomationToolsView.swift */,
 				014D0B1AFCA2C8372A386A07 /* AutomationServices.swift */,
@@ -182,6 +226,7 @@
 				AA00004A29A8B5000123456 /* FavoriteManager.swift */,
 				AA00004829A8B5000123456 /* OneClip.entitlements */,
 				AA00000429A8B4B800123456 /* Assets.xcassets */,
+				124435DECD59BE683C090329 /* Formula */,
 				81C7B96EA3173C0C3B4C8FDC /* InfoPlist.strings */,
 				AA00000629A8B4B800123456 /* Preview Content */,
 			);
@@ -263,6 +308,7 @@
 			files = (
 				AA00000829A8B4B800123456 /* Preview Assets.xcassets in Resources */,
 				AA00000529A8B4B800123456 /* Assets.xcassets in Resources */,
+				15A2A56B8EC5EE1EDB3210EB /* Formula in Resources */,
 				4AB2218BA0D07B910E8FB1FF /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -284,6 +330,21 @@
 				AA00004129A8B5000123456 /* NotificationManager.swift in Sources */,
 				AA00004929A8B5000123456 /* FavoriteManager.swift in Sources */,
 				AA00000129A8B4B700123456 /* OneClipApp.swift in Sources */,
+				F11A0256C882707AC61D091E /* CaptureSelectionOptions.swift in Sources */,
+				D7889FB3CE1C4C4E98B6EF29 /* CaptureRedaction.swift in Sources */,
+				A657ABA31E3E87F20D919D4B /* CaptureRecognitionService.swift in Sources */,
+				C0219080D9830AA94E4F0C3E /* CaptureFormulaPreview.swift in Sources */,
+				5FDCDC536ACCA0648B59949A /* PinnedImageController.swift in Sources */,
+				C72332622AD174DFCC28B54E /* CaptureWorkflowCoordinator.swift in Sources */,
+				7392E547A815975566BC2E92 /* CaptureScrolling.swift in Sources */,
+				16C1052A1C8AF971E47432B4 /* CaptureRecording.swift in Sources */,
+				CC63690084CF1EC5E5658332 /* CaptureRecognition.swift in Sources */,
+				18C881A6E1FCD09996C6D0D8 /* CaptureOutput.swift in Sources */,
+				EBFB3E5DDF4274EA1E0FF922 /* CaptureAnnotationOptions.swift in Sources */,
+				6B2A9366A44CDEF9402E27AA /* ScreenshotSession.swift in Sources */,
+				18B41FD0D6FF3956D2FED482 /* ScreenshotCoordinator.swift in Sources */,
+				7230055B7EB4C65398151CF3 /* CaptureAnnotationOverlay.swift in Sources */,
+				47D2FABD52CAA80E6640D382 /* CaptureAnnotation.swift in Sources */,
 				37A5C967EC4AACAF0F54199E /* LocalizedEditingCommands.swift in Sources */,
 				F220AC661ECA76A017FCC531 /* NativeLanguageController.swift in Sources */,
 				C78E6D48AA3293C98E5E25E4 /* LanguageTests.swift in Sources */,
@@ -313,7 +374,6 @@
 				F725C77E824CEB0790938D09 /* ImageEditorView.swift in Sources */,
 				471EA7D94108D6CFD1AD3B7D /* HistoryArchive.swift in Sources */,
 				EC2C852435E69AE9E2B873D0 /* DesktopServices.swift in Sources */,
-				8631B42EF46F6AC44979B22F /* CaptureToolsView.swift in Sources */,
 				9221C2491C8F4151991ECF9F /* CaptureTools.swift in Sources */,
 				BD7FE4BCED36AB209247FFED /* AutomationToolsView.swift in Sources */,
 				1BD9F7FAA2DF1F9E9A52E320 /* AutomationServices.swift in Sources */,
@@ -449,7 +509,7 @@
 				CODE_SIGN_ENTITLEMENTS = OneClip/OneClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_ASSET_PATHS = "\"OneClip/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -459,7 +519,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = local.cclip.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -475,7 +535,7 @@
 				CODE_SIGN_ENTITLEMENTS = OneClip/OneClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_ASSET_PATHS = "\"OneClip/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -485,7 +545,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = local.cclip.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

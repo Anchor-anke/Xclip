@@ -11,6 +11,7 @@
 <key>LSMinimumSystemVersion</key><string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 <key>NSPrincipalClass</key><string>NSApplication</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>NSMicrophoneUsageDescription</key><string>仅当你在录屏选项中启用麦克风时，Xclip 才录制声音并写入本机的视频文件。</string>
 <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Wcowin. MIT License.</string>
 <key>NSLocalNetworkUsageDescription</key><string>Only when you enable LAN sharing, Xclip shares the selected content with devices on your local network.</string>
 <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>local.cclip.commands</string><key>CFBundleURLSchemes</key><array><string>xclip</string><string>cclip</string><string>oneclip-dev</string></array></dict></array>

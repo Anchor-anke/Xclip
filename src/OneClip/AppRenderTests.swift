@@ -21,11 +21,23 @@ enum AppRenderTests {
         }
         WorkflowState.shared.document.stack = Array(manager.clipboardItems.prefix(2))
         WorkflowState.shared.document.replies = [.init(title: "资料已收到", group: "工作 / 回复", item: .init(id: UUID(), content: "已收到，谢谢。我会在今天核对后回复。", type: .text, timestamp: Date()))]
+        let captureImage = NSImage(size: NSSize(width: 500, height: 260), flipped: false) { rect in
+            NSColor.white.setFill(); rect.fill()
+            NSAttributedString(string: "Xclip · 截图工作流\nCapture, annotate and share", attributes: [.font: NSFont.systemFont(ofSize: 26), .foregroundColor: NSColor.labelColor]).draw(at: NSPoint(x: 24, y: 100))
+            return true
+        }
+        let captureData = try CaptureImageCodec.png(captureImage.cgImage(forProposedRect: nil, context: nil, hints: nil)!)
+        let captureOCR = CaptureRecognitionController(data: captureData, mode: .ocr)
+        captureOCR.input = "Xclip · 截图工作流\nCapture, annotate and share"
+        captureOCR.status = "识别完成，可直接编辑结果。"
+        defer { captureOCR.close() }
         let views: [(String, AnyView)] = [
             ("workspace", AnyView(ContentView())),
             ("history", AnyView(HistoryView())), ("stack", AnyView(StackView())),
             ("replies", AnyView(RepliesView())), ("shelf", AnyView(ShelfView())),
-            ("capture", AnyView(CaptureToolsView())), ("automation", AnyView(AutomationToolsView())),
+            ("screenshot-shortcuts", AnyView(PreferencesView(initialTab: "shortcuts"))), ("automation", AnyView(AutomationToolsView())),
+            ("screenshot-settings", AnyView(PreferencesView(initialTab: "capture"))),
+            ("screenshot-ocr", AnyView(CaptureRecognitionView(controller: captureOCR))),
             ("sync", AnyView(LANSyncView())), ("sharing", AnyView(SharingExtensionsView())), ("settings", AnyView(PreferencesView()))
         ]
         for (name, content) in views {

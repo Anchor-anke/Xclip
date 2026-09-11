@@ -129,6 +129,9 @@ final class CaptureService: ObservableObject {
     private var captureWasCancelled = false
     private var process: Process?
     private var selector: CaptureRegionSelector?
+    private var annotationController: CaptureAnnotationController?
+    private var captureSessionID: UUID?
+    private var captureDisplayConfigurationChanged = false
     private var recognitionRequests: [UUID: VNRecognizeTextRequest] = [:]
 
     func refreshScreenPermission() { screenPermissionState = screenPermission.refresh() }
@@ -151,6 +154,7 @@ final class CaptureService: ObservableObject {
         captureWasCancelled = true
         if let process, process.isRunning { process.terminate() }
         selector?.cancel()
+        annotationController?.cancel()
         recognitionRequests.values.forEach { $0.cancel() }
     }
 
@@ -180,16 +184,174 @@ final class CaptureService: ObservableObject {
         return try await capture(arguments: ["-R", argument], delay: delay)
     }
 
+    /// Freeze the screen before showing any annotation windows, and hold the capture lock until export or cancellation.
+    func captureAndAnnotate(mode: CaptureMode, delay: Int = 0, action: CaptureWorkflowAction? = nil) async throws -> CaptureAnnotationResult {
+        try await performCaptureSession {
+            try await self.waitForCapture(delay: delay)
+            let layout = try self.captureDisplayLayout()
+            let sessionID = self.captureSessionID
+            let observer = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, self.captureSessionID == sessionID else { return }
+                    self.captureDisplayConfigurationChanged = true
+                    self.cancel()
+                }
+            }
+            defer { NotificationCenter.default.removeObserver(observer) }
+
+            do {
+                let snapshots: [CaptureAnnotationSnapshot]
+                switch mode {
+                case .region, .window:
+                    let windows: [CGRect]
+                    if mode == .window {
+                        guard let mainDisplay = layout.first(where: { $0.displayID == CGMainDisplayID() }) else {
+                            throw CaptureToolError.captureFailed
+                        }
+                        windows = try self.visibleWindowFrames(mainScreenTop: mainDisplay.frame.maxY)
+                    } else {
+                        windows = []
+                    }
+                    var frozen: [CaptureAnnotationSnapshot] = []
+                    for display in layout {
+                        let data = try await self.runCaptureCommand(arguments: ["-D", String(display.captureIndex)])
+                        let image = try CaptureImageCodec.decode(data)
+                        if mode == .window {
+                            let regions = self.windowRegions(windows, on: display.frame, image: image)
+                            frozen.append(CaptureAnnotationSnapshot(frame: display.frame, image: image,
+                                                                    selectsFullImage: false, windowRegions: regions, initialAction: action))
+                        } else {
+                            frozen.append(CaptureAnnotationSnapshot(frame: display.frame, image: image, selectsFullImage: false, initialAction: action))
+                        }
+                    }
+                    snapshots = frozen
+                case .fullScreen:
+                    let data = try await self.runCaptureCommand(arguments: ["-m"])
+                    guard let display = layout.first(where: { $0.displayID == CGMainDisplayID() }) else {
+                        throw CaptureToolError.captureFailed
+                    }
+                    snapshots = [CaptureAnnotationSnapshot(frame: display.frame, image: try CaptureImageCodec.decode(data), selectsFullImage: true, initialAction: action)]
+                }
+                guard try self.captureDisplayLayout() == layout else {
+                    self.captureDisplayConfigurationChanged = true
+                    throw CaptureToolError.cancelled
+                }
+                try self.checkCaptureCancellation()
+                let controller = CaptureAnnotationController()
+                self.annotationController = controller
+                defer { self.annotationController = nil }
+                let result = try await controller.select(snapshots: snapshots)
+                try self.checkCaptureCancellation()
+                return result
+            } catch {
+                if self.captureDisplayConfigurationChanged {
+                    throw CaptureMessage("显示器设置已变化，截图已取消。请重新截图。", "Display settings changed, so capture was cancelled. Start a new capture.")
+                }
+                throw error
+            }
+        }
+    }
+
+    private struct CaptureDisplayLayout: Equatable {
+        let displayID: CGDirectDisplayID
+        let captureIndex: Int
+        let frame: CGRect
+        let scale: CGFloat
+    }
+
+    /// WindowServer returns windows from front to back. Retaining that order makes hit testing
+    /// choose the foremost normal window and keeps overlays, desktop elements and Xclip out.
+    private func visibleWindowFrames(mainScreenTop: CGFloat) throws -> [CGRect] {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { throw CaptureToolError.captureFailed }
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        return windows.compactMap { window in
+            guard let layer = window[kCGWindowLayer as String] as? NSNumber, layer.intValue == 0,
+                  let alpha = window[kCGWindowAlpha as String] as? NSNumber, alpha.doubleValue > 0,
+                  let owner = window[kCGWindowOwnerPID as String] as? NSNumber, owner.int32Value != ownPID,
+                  let dictionary = window[kCGWindowBounds as String] as? [String: Any],
+                  let rect = CGRect(dictionaryRepresentation: dictionary as CFDictionary),
+                  rect.minX.isFinite, rect.minY.isFinite, rect.maxX.isFinite, rect.maxY.isFinite,
+                  rect.width >= 2, rect.height >= 2 else { return nil }
+            // CoreGraphics starts at the top-left of the main display; AppKit starts at its bottom-left.
+            return CGRect(x: rect.minX, y: mainScreenTop - rect.maxY, width: rect.width, height: rect.height)
+        }
+    }
+
+    /// A window suggestion is a crop of this frozen screen's visible pixels, including any occlusion.
+    private func windowRegions(_ windows: [CGRect], on screen: CGRect, image: CGImage) -> [CGRect] {
+        guard screen.width > 0, screen.height > 0 else { return [] }
+        let pixelBounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        let scaleX = CGFloat(image.width) / screen.width
+        let scaleY = CGFloat(image.height) / screen.height
+        return windows.compactMap { window in
+            let visible = window.intersection(screen)
+            guard !visible.isNull, !visible.isEmpty else { return nil }
+            let pixels = CGRect(x: (visible.minX - screen.minX) * scaleX,
+                                y: (screen.maxY - visible.maxY) * scaleY,
+                                width: visible.width * scaleX, height: visible.height * scaleY)
+                .integral.intersection(pixelBounds)
+            return pixels.width >= 2 && pixels.height >= 2 ? pixels : nil
+        }
+    }
+
+    private func captureDisplayLayout() throws -> [CaptureDisplayLayout] {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { throw CaptureToolError.captureFailed }
+        var displayIDs = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &displayIDs, &count) == .success else { throw CaptureToolError.captureFailed }
+        displayIDs = Array(displayIDs.prefix(Int(count)))
+        // CoreGraphics defines the first active display as the main display; screencapture uses one-based display indices.
+        guard displayIDs.first == CGMainDisplayID() else { throw CaptureToolError.captureFailed }
+        let layout = try NSScreen.screens.map { screen -> CaptureDisplayLayout in
+            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
+                  let index = displayIDs.firstIndex(of: number.uint32Value) else { throw CaptureToolError.captureFailed }
+            return CaptureDisplayLayout(displayID: number.uint32Value, captureIndex: index + 1, frame: screen.frame, scale: screen.backingScaleFactor)
+        }.sorted { $0.captureIndex < $1.captureIndex }
+        guard !layout.isEmpty else { throw CaptureToolError.captureFailed }
+        return layout
+    }
+
     private func capture(arguments: [String], delay: Int) async throws -> Data {
-        guard !isCapturing, selector == nil else { throw CaptureToolError.captureFailed }
+        try await performCaptureSession {
+            try await self.waitForCapture(delay: delay)
+            return try await self.runCaptureCommand(arguments: arguments)
+        }
+    }
+
+    private func performCaptureSession<T>(_ action: @MainActor () async throws -> T) async throws -> T {
+        guard !isCapturing, selector == nil, annotationController == nil else { throw CaptureToolError.captureFailed }
         try requireScreenPermission()
+        let sessionID = UUID()
+        captureSessionID = sessionID
         isCapturing = true
         captureWasCancelled = false
-        defer { isCapturing = false; process = nil }
+        captureDisplayConfigurationChanged = false
+        defer { isCapturing = false; process = nil; captureSessionID = nil }
+        return try await withTaskCancellationHandler {
+            try await action()
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let self, self.captureSessionID == sessionID else { return }
+                self.cancel()
+            }
+        }
+    }
+
+    private func waitForCapture(delay: Int) async throws {
         if delay > 0 { try await Task.sleep(nanoseconds: UInt64(min(delay, 30)) * 1_000_000_000) }
+        try checkCaptureCancellation()
+    }
+
+    private func checkCaptureCancellation() throws {
         try Task.checkCancellation()
         guard !captureWasCancelled else { throw CaptureToolError.cancelled }
+    }
+
+    private func runCaptureCommand(arguments: [String]) async throws -> Data {
+        try checkCaptureCancellation()
         try requireScreenPermission()
+        defer { process = nil }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("oneclip-capture-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: directory) }

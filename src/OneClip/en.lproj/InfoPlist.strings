@@ -1,1 +1,2 @@
 "NSLocalNetworkUsageDescription" = "Only when you enable LAN sharing, Xclip shares the selected content with devices on your local network.";
+"NSMicrophoneUsageDescription" = "Only when you enable microphone audio in recording options, Xclip records sound into the video saved on this Mac.";

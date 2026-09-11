@@ -23,6 +23,7 @@ enum AppSmokeTests {
         let store = ClipboardStore(storageDirectory: root.appendingPathComponent("history"), getCleanupDays: { 0 })
         let manager = ClipboardManager(store: store, board: board, settings: settings)
         try captureAndFormats(manager, board, output)
+        try screenshotCopy(settings, root)
         try undo(manager)
         try files(manager, board, output, root)
         try sessionOnly(store, board, output, settings, root)
@@ -84,6 +85,82 @@ enum AppSmokeTests {
         try expect(output.string(forType: .string) == fallback.content && manager.lastError != nil, "Paste script errors must fall back to original text")
         manager.textTransform = nil
     }
+    private static func screenshotCopy(_ settings: SettingsManager, _ root: URL) throws {
+        let board = NSPasteboard(name: .init("CClip.SyntheticSmoke.Screenshot.\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+        let store = ClipboardStore(storageDirectory: root.appendingPathComponent("screenshot-history"), getCleanupDays: { 0 })
+        let manager = ClipboardManager(store: store, board: board, settings: settings)
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 2, pixelsHigh: 2, bitsPerSample: 8,
+                                      samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                      colorSpaceName: .deviceRGB, bytesPerRow: 8, bitsPerPixel: 32)!
+        for y in 0..<2 { for x in 0..<2 { bitmap.setColor(NSColor(calibratedRed: 0.2, green: 0.4, blue: 0.6, alpha: 1), atX: x, y: y) } }
+        let png = bitmap.representation(using: .png, properties: [:])!
+        let saved = try manager.copyScreenshot(png).get()
+        try expect(board.data(forType: .png) == png, "Screenshot copy must preserve PNG bytes on its named monitored pasteboard")
+        try expect(manager.clipboardItems.map(\.id) == [saved.id], "Screenshot copy must save exactly one history item")
+        try expect(saved.sourceApp == (Bundle.main.bundleIdentifier ?? "local.cclip.app") && saved.sourceAppName == "Xclip",
+                   "Screenshot history must identify Xclip as its source")
+        let savedBytes = try saved.data ?? saved.filePath.map { try Data(contentsOf: URL(fileURLWithPath: $0)) }
+        try expect(savedBytes == png, "Screenshot history must preserve the same original PNG bytes")
+        manager.poll(sourceApp: "com.synthetic.previous-foreground", sourceAppName: "Previous App")
+        manager.poll(sourceApp: "com.synthetic.another-foreground", sourceAppName: "Another App")
+        try expect(manager.clipboardItems.map(\.id) == [saved.id], "Polling after screenshot copy must not recapture it under a restored foreground app")
+        try expect(manager.unreadCount == 0, "Internal screenshot copy must not create a second unread capture event")
+
+        board.clearContents()
+        try expect(board.setData(png, forType: .png), "A later external copy can publish the same synthetic PNG")
+        manager.poll(sourceApp: "com.synthetic.external-copy", sourceAppName: "External Copy")
+        try expect(manager.clipboardItems.count == 2 && manager.clipboardItems.first?.sourceApp == "com.synthetic.external-copy",
+                   "A genuinely new external copy of identical screenshot bytes remains a separate source event")
+
+        board.clearContents(); board.setString("Synthetic clipboard to preserve", forType: .string)
+        let preservedChangeCount = board.changeCount
+        let preservedIDs = manager.clipboardItems.map(\.id)
+        manager.captureAllowed = { false }
+        do {
+            _ = try manager.copyScreenshot(png)
+            try expect(false, "Locked screenshot copy must throw before touching the pasteboard")
+        } catch ClipboardError.accessDenied {
+            try expect(true, "Locked screenshot copy reports access denied")
+        }
+        try expect(board.changeCount == preservedChangeCount && board.string(forType: .string) == "Synthetic clipboard to preserve",
+                   "Locked screenshot copy must preserve existing pasteboard contents")
+        try expect(manager.clipboardItems.map(\.id) == preservedIDs, "Locked screenshot copy must not add history")
+        manager.captureAllowed = { true }
+        do {
+            _ = try manager.copyScreenshot(Data("not an image".utf8))
+            try expect(false, "Invalid screenshot bytes must throw before clearing the pasteboard")
+        } catch ClipboardError.dataCorrupted {
+            try expect(true, "Invalid screenshot bytes report corrupted data")
+        }
+        try expect(board.changeCount == preservedChangeCount && board.string(forType: .string) == "Synthetic clipboard to preserve",
+                   "Invalid screenshot bytes must preserve existing pasteboard contents")
+        try expect(manager.clipboardItems.map(\.id) == preservedIDs, "Invalid screenshot bytes must not add history")
+
+        let unavailableDirectory = root.appendingPathComponent("screenshot-store-is-a-file")
+        try Data("Synthetic blocked history directory".utf8).write(to: unavailableDirectory)
+        let unavailableStore = ClipboardStore(storageDirectory: unavailableDirectory, getCleanupDays: { 0 })
+        let unavailable = ClipboardManager(store: unavailableStore, board: board, settings: settings)
+        switch try unavailable.copyScreenshot(png) {
+        case .success: try expect(false, "Unavailable history must return a persistence failure")
+        case .failure: try expect(true, "Successful copy reports history failure separately instead of throwing a copy failure")
+        }
+        try expect(board.data(forType: .png) == png, "History failure must leave the successful screenshot copy usable")
+        unavailable.poll(sourceApp: "com.synthetic.previous-foreground")
+        try expect(unavailable.clipboardItems.isEmpty && unavailable.unreadCount == 0,
+                   "Polling after a history failure must not retry screenshot ingestion under another app")
+
+        settings.enableHistoryPersistence = false
+        defer { settings.enableHistoryPersistence = true }
+        let memory = ClipboardManager(store: store, board: board, settings: settings)
+        let memorySaved = try memory.copyScreenshot(png).get()
+        memory.poll(sourceApp: "com.synthetic.previous-foreground")
+        try expect(memory.clipboardItems.map(\.id) == [memorySaved.id] && memorySaved.data == png,
+                   "Session-only screenshots must keep one in-memory image without recapture")
+        try expect(try store.readItems().map(\.id).contains(memorySaved.id) == false,
+                   "Session-only screenshot copy must not persist its image to the history store")
+    }
+
     private static func undo(_ manager: ClipboardManager) throws {
         let a = try manager.addText("Synthetic undo A"), b = try manager.addText("Synthetic undo B")
         manager.deleteItem(a)

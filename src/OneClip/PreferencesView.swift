@@ -15,14 +15,20 @@ struct PreferencesView: View {
     @State private var categoryParent: UUID?
     @State private var storageInfo = ClipboardManager.shared.getStorageInfo()
     @State private var tab = "general"
+    @State private var shortcutError: String?
+    init(initialTab: String = "general") {
+        _tab = State(initialValue: initialTab)
+    }
     var body: some View {
         VStack {
             Picker(L("设置分组", "Settings group"), selection: $tab) {
                 Text(L("通用", "General")).tag("general"); Text(L("隐私", "Privacy")).tag("privacy")
+                Text(L("截屏", "Capture")).tag("capture")
                 Text(L("数据", "Data")).tag("data"); Text(L("分类", "Categories")).tag("categories"); Text(L("快捷键", "Shortcuts")).tag("shortcuts")
             }.pickerStyle(.segmented).padding()
             Form {
                 switch tab {
+                case "capture": CaptureSettingsView()
                 case "privacy": privacy
                 case "data": data
                 case "categories": categories
@@ -104,7 +110,7 @@ struct PreferencesView: View {
         Group {
             Section(L("历史保存", "History storage")) {
                 Toggle(L("持久保存历史", "Persist history"), isOn: $settings.enableHistoryPersistence)
-                Picker(L("历史数量", "History limit"), selection: $settings.maxItems) { Text(L("不限制", "Unlimited")).tag(0); Text("500").tag(500); Text("2000").tag(2000); Text("10000").tag(10000) }
+                Picker(L("历史数量", "History limit"), selection: $settings.maxItems) { Text(L("不限制", "Unlimited")).tag(0); Text("100").tag(100); Text("500").tag(500); Text("2000").tag(2000); Text("10000").tag(10000) }
                 Picker(L("自动清理", "Retention"), selection: $settings.autoCleanupDays) { Text(L("从不", "Never")).tag(0); Text(L("7 天", "7 days")).tag(7); Text(L("30 天", "30 days")).tag(30); Text(L("90 天", "90 days")).tag(90) }
                 Toggle(L("自动识别新图片文字，供历史搜索", "Recognize new images for history search"), isOn: Binding(get: { state.document.autoRecognizeImages ?? false }, set: { state.document.autoRecognizeImages = $0 }))
                 Text(L("收藏和置顶不会自动清理。", "Favorites and pinned items are protected from automatic cleanup.")).font(.caption)
@@ -146,14 +152,43 @@ struct PreferencesView: View {
     private var shortcutSettings: some View {
         Group {
             Section(L("全局快捷键", "Global shortcuts")) {
-                ForEach(GlobalShortcuts.defaults.keys.sorted(), id: \.self) { name in
+                ForEach(GlobalShortcuts.allActions, id: \.self) { name in
                     HStack {
-                        Text(shortcutTitle(name)); Spacer()
-                        Text((state.document.shortcuts[name] ?? GlobalShortcuts.defaults[name])?.label ?? "").font(.system(.body, design: .monospaced))
-                        Button(L("修改…", "Change…")) { ShortcutRecorder.shared.record { spec in state.document.shortcuts[name] = spec; NotificationCenter.default.post(name: .init("CClipShortcutsChanged"), object: nil) } }
-                        Button(L("恢复", "Reset")) { state.document.shortcuts.removeValue(forKey: name); NotificationCenter.default.post(name: .init("CClipShortcutsChanged"), object: nil) }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(shortcutTitle(name))
+                            if let description = shortcutDescription(name) {
+                                Text(description)
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        Spacer()
+                        Text((state.document.shortcuts[name] ?? GlobalShortcuts.defaults[name])?.label ?? L("未设置", "Not set"))
+                            .font(.system(.body, design: .monospaced))
+                            .accessibilityIdentifier("settings.shortcut.\(name).binding")
+                        Button(L("修改…", "Change…")) {
+                            shortcutError = nil
+                            ShortcutRecorder.shared.record(validate: { spec in
+                                GlobalShortcuts.conflictDescription(for: spec, excluding: name, in: state.document)
+                            }) { spec in
+                                state.document.shortcuts[name] = spec
+                                NotificationCenter.default.post(name: .init("CClipShortcutsChanged"), object: nil)
+                            }
+                        }.accessibilityIdentifier("settings.shortcut.\(name).change")
+                        Button(L("恢复", "Reset")) {
+                            if let spec = GlobalShortcuts.defaults[name], let error = GlobalShortcuts.conflictDescription(for: spec, excluding: name, in: state.document) {
+                                shortcutError = error
+                                return
+                            }
+                            shortcutError = nil
+                            state.document.shortcuts.removeValue(forKey: name)
+                            NotificationCenter.default.post(name: .init("CClipShortcutsChanged"), object: nil)
+                        }.accessibilityIdentifier("settings.shortcut.\(name).reset")
                     }
                 }
+                Text(L("修改后立即生效并自动保存；“恢复”使用默认组合，没有默认组合的操作会清除绑定。", "Changes apply immediately and are saved automatically. Reset restores the default combination, or clears the binding when no default exists."))
+                    .font(.caption).foregroundStyle(.secondary)
+                if let shortcutError { Text(shortcutError).foregroundStyle(.red) }
                 ForEach(shortcuts.errors, id: \.self) { Text($0).foregroundStyle(.red) }
             }
         }
@@ -167,9 +202,22 @@ func shortcutTitle(_ name: String) -> String {
     case "replies": return L("快捷回复", "Replies")
     case "shelf": return L("拖拽容器", "Shelf")
     case "quick": return L("快速面板", "Quick panel")
-    case "capture": return L("截图", "Capture")
+    case "capture": return L("截屏", "Screenshot")
     case "split": return L("按行入栈", "Split to stack")
-    default: return name
+    default: return GlobalShortcuts.title(for: name)
+    }
+}
+func shortcutDescription(_ name: String) -> String? {
+    switch name {
+    case "capture": return L("框选并标注屏幕；长截图时暂停或继续，录屏时开始或结束。", "Select and annotate the screen; pause or resume scrolling capture, or start or stop recording.")
+    case "captureOCR": return L("框选屏幕并识别文字，可编辑、复制或保存结果。", "Select an area and recognize text, then edit, copy or save the result.")
+    case "captureLong": return L("框选后连续拼接滚动内容，支持手动或自动滚动。", "Select an area and stitch scrolling content manually or automatically.")
+    case "captureRecord": return L("框选录屏区域，录制后可剪辑并导出视频或动图。", "Select a recording area, then trim and export a video or animated image.")
+    case "pinClipboard": return L("把剪贴板中的图片、文字、颜色或文件贴到屏幕上。", "Pin an image, text, color or file from the clipboard to the screen.")
+    case "restorePin": return L("恢复最近关闭的贴图；彻底清除的贴图无法恢复。", "Restore the most recently closed pin. Permanently cleared pins cannot be restored.")
+    case "togglePins": return L("一起隐藏或显示当前贴图，保留图片和编辑状态。", "Hide or show all current pins while keeping their images and edits.")
+    case "resetPinPassthrough": return L("关闭所有贴图的鼠标穿透，并显示隐藏或屏幕外的贴图。", "Turn off mouse passthrough for all pins and bring hidden or offscreen pins into view.")
+    default: return nil
     }
 }
 func openAccessibility() { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!) }
@@ -178,38 +226,80 @@ func applyCapturePreferences() {
     ClipboardManager.shared.sensitivePatterns = WorkflowState.shared.document.excludedPatterns.components(separatedBy: .newlines).filter { !$0.isEmpty }
 }
 
-class ShortcutRecorder {
+class ShortcutRecorder: NSObject, ObservableObject, NSWindowDelegate {
     static let shared = ShortcutRecorder()
+    @Published private(set) var errorMessage: String?
     private var monitor: Any?
     private var panel: NSPanel?
     private var languageObserver: NSObjectProtocol?
-    private init() {
+    private override init() {
+        super.init()
         languageObserver = NotificationCenter.default.addObserver(forName: AppLanguage.didChange, object: AppLanguage.shared, queue: .main) { [weak self] _ in
             self?.panel?.title = L("按下新快捷键，Esc 取消", "Press new shortcut. Esc to cancel.")
         }
     }
-    func record(_ completion: @escaping (ShortcutSpec) -> Void) {
+    func record(validate: ((ShortcutSpec) -> String?)? = nil, _ completion: @escaping (ShortcutSpec) -> Void) {
         cancel()
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 110), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        errorMessage = nil
+        GlobalShortcuts.shared.pauseForShortcutRecording()
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 430, height: 170), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
         panel.title = L("按下新快捷键，Esc 取消", "Press new shortcut. Esc to cancel.")
-        panel.contentView = NSHostingView(rootView: ShortcutRecorderPrompt())
-        panel.center(); panel.makeKeyAndOrderFront(nil); self.panel = panel
+        panel.delegate = self
+        panel.contentView = NSHostingView(rootView: ShortcutRecorderPrompt(recorder: self))
+        self.panel = panel
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
+            guard let self, let recordingPanel = self.panel, event.window === recordingPanel else { return event }
             if event.keyCode == 53 { self.cancel(); return nil }
+            guard !event.isARepeat else { return nil }
             let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            guard !flags.intersection([.command, .option, .control]).isEmpty else { NSSound.beep(); return nil }
-            let label = (flags.contains(.control) ? "⌃" : "") + (flags.contains(.option) ? "⌥" : "") + (flags.contains(.shift) ? "⇧" : "") + (flags.contains(.command) ? "⌘" : "") + (event.charactersIgnoringModifiers?.uppercased() ?? "[\(event.keyCode)]")
-            completion(.init(keyCode: event.keyCode, modifiers: flags.rawValue, label: label)); self.cancel(); return nil
+            guard !flags.intersection([.command, .option, .control]).isEmpty else {
+                self.errorMessage = L("请同时按住 Command、Option 或 Control。", "Hold Command, Option or Control with the key.")
+                return nil
+            }
+            let spec = Self.spec(for: event)
+            if let error = validate?(spec) { self.errorMessage = error; return nil }
+            // Persist and notify before resuming registration, so the new binding is used.
+            completion(spec)
+            if self.panel === recordingPanel { self.cancel() }
+            return nil
         }
+        panel.center(); panel.makeKeyAndOrderFront(nil)
     }
-    private func cancel() { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil; panel?.close(); panel = nil }
+    static func spec(for event: NSEvent) -> ShortcutSpec {
+        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        let specialKeys: [UInt16: String] = [36: "↩", 48: "⇥", 49: L("空格", "Space"), 51: "⌫", 76: "⌤", 115: "↖", 116: "⇞", 117: "⌦", 119: "↘", 121: "⇟", 123: "←", 124: "→", 125: "↓", 126: "↑"]
+        let key = specialKeys[event.keyCode] ?? event.charactersIgnoringModifiers?.uppercased() ?? "[\(event.keyCode)]"
+        let label = (flags.contains(.control) ? "⌃" : "") + (flags.contains(.option) ? "⌥" : "") + (flags.contains(.shift) ? "⇧" : "") + (flags.contains(.command) ? "⌘" : "") + key
+        return .init(keyCode: event.keyCode, modifiers: flags.rawValue, label: label)
+    }
+    func windowWillClose(_ notification: Notification) {
+        guard let closing = notification.object as? NSWindow, closing === panel else { return }
+        finish(closePanel: false)
+    }
+    func windowDidResignKey(_ notification: Notification) {
+        guard let resigning = notification.object as? NSWindow, resigning === panel else { return }
+        cancel()
+    }
+    func cancel() { finish(closePanel: true) }
+    private func finish(closePanel: Bool) {
+        if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil
+        let closingPanel = panel; panel = nil
+        closingPanel?.delegate = nil
+        if closePanel { closingPanel?.close() }
+        GlobalShortcuts.shared.resumeAfterShortcutRecording()
+    }
 }
 
 private struct ShortcutRecorderPrompt: View {
     @ObservedObject private var appLanguage = AppLanguage.shared
+    @ObservedObject var recorder: ShortcutRecorder
     var body: some View {
-        Text(L("请使用 Command、Option 或 Control 组合键。", "Include Command, Option or Control.")).padding(20)
+        VStack(alignment: .leading, spacing: 12) {
+            Text(L("请使用 Command、Option 或 Control 组合键。", "Include Command, Option or Control."))
+            if let error = recorder.errorMessage { Text(error).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            HStack { Spacer(); Button(L("取消", "Cancel")) { recorder.cancel() } }
+        }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

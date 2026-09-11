@@ -24,7 +24,17 @@ struct ContentView: View {
                             nav("shelf", "tray.and.arrow.down", L("拖拽容器", "Drop shelf"))
                         }
                         Section(L("工具", "Tools")) {
-                            nav("capture", "viewfinder", L("截图与 OCR", "Capture & OCR"))
+                            Button { DesktopEvents.shared.show?("capture") } label: {
+                                HStack {
+                                    Label(L("截屏", "Screenshot"), systemImage: "viewfinder")
+                                    Spacer(minLength: 4)
+                                    Text((workflow.document.shortcuts["capture"] ?? GlobalShortcuts.defaults["capture"])?.label ?? "")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }.contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("sidebar.screenshot")
+                            .help(L("直接框选并标注屏幕。快捷键可在设置中修改。", "Select and annotate the screen. Change the shortcut in Settings."))
                             nav("automation", "sparkles", L("AI 与脚本", "AI & scripts"))
                             nav("sync", "network", L("局域网共享", "LAN sharing"))
                             nav("sharing", "square.and.arrow.up", L("上传与翻译", "Upload & translate"))
@@ -43,7 +53,6 @@ struct ContentView: View {
                     case "stack": StackView()
                     case "replies": RepliesView()
                     case "shelf": ShelfView()
-                    case "capture": CaptureToolsView(onCapture: { data in perform { _ = try clipboard.addImage(data) } })
                     case "automation": AutomationToolsView()
                     case "sync": LANSyncView()
                     case "sharing": SharingExtensionsView()
@@ -64,7 +73,11 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 760, minHeight: 540)
-        .onReceive(NotificationCenter.default.publisher(for: .init("CClipSection"))) { event in section = event.object as? String ?? "history" }
+        .onReceive(NotificationCenter.default.publisher(for: .init("CClipSection"))) { event in
+            let destination = event.object as? String ?? "history"
+            if destination == "capture" { DesktopEvents.shared.show?("capture") }
+            else { section = destination }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .init("CClipSearch"))) { event in section = "history"; clipboard.searchText = event.object as? String ?? "" }
     }
     private func nav(_ id: String, _ icon: String, _ title: String) -> some View { Label(title, systemImage: icon).tag(id) }

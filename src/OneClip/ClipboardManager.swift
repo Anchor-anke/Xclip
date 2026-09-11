@@ -71,9 +71,15 @@ class ClipboardManager: ObservableObject {
 
     private func poll() {
         guard monitoringPasteboard.changeCount != lastChangeCount else { return }
-        lastChangeCount = monitoringPasteboard.changeCount
         let application = NSWorkspace.shared.frontmostApplication
-        do { _ = try capture(from: monitoringPasteboard, sourceApp: application?.bundleIdentifier, sourceAppName: application?.localizedName) }
+        poll(sourceApp: application?.bundleIdentifier, sourceAppName: application?.localizedName)
+    }
+
+    /// Share the change-count boundary with named-pasteboard tests without reading the desktop.
+    func poll(sourceApp: String?, sourceAppName: String? = nil) {
+        guard monitoringPasteboard.changeCount != lastChangeCount else { return }
+        lastChangeCount = monitoringPasteboard.changeCount
+        do { _ = try capture(from: monitoringPasteboard, sourceApp: sourceApp, sourceAppName: sourceAppName) }
         catch { setError(error) }
     }
 
@@ -203,6 +209,17 @@ class ClipboardManager: ObservableObject {
     @discardableResult func addImage(_ data: Data) throws -> ClipboardItem {
         guard NSImage(data: data) != nil else { throw ClipboardError.dataCorrupted }
         return try ingest(ClipboardItem(id: UUID(), content: "Image", type: .image, timestamp: Date(), data: data))
+    }
+
+    /// Copy once through the monitored writer, then report history persistence separately.
+    /// A successful copy must not be recaptured under whichever app regains focus afterward.
+    @discardableResult func copyScreenshot(_ data: Data) throws -> Result<ClipboardItem, Error> {
+        guard captureAllowed() else { throw ClipboardError.accessDenied }
+        guard NSImage(data: data) != nil else { throw ClipboardError.dataCorrupted }
+        let item = ClipboardItem(id: UUID(), content: "Image", type: .image, timestamp: Date(), data: data,
+                                 sourceApp: Bundle.main.bundleIdentifier ?? "local.cclip.app", sourceAppName: "Xclip")
+        try writeToClipboard(item)
+        return Result { try ingest(item) }
     }
     func reload() {
         guard settings.enableHistoryPersistence else { changed(); return }

@@ -10,7 +10,7 @@ Download the DMG or ZIP from [GitHub Releases](https://github.com/Anchor-anke/Xc
 
 Quit the previous version completely, then move `Xclip.app` to Applications. Choose Simplified Chinese or English under Settings → General → Interface language. Changes apply immediately and are remembered.
 
-The current package uses local ad-hoc signing, without Developer ID signing or Apple notarization. Screenshots require Screen Recording permission; OCR on existing images does not. See the [development guide](docs/BUILDING.md) for installation and permissions.
+The 0.4.0 release uses a stable local development certificate, without Developer ID signing or Apple notarization. Screenshots require Screen Recording permission; OCR on existing images does not. See the [development guide](docs/BUILDING.md) for installation and permissions.
 
 ## Current features
 
@@ -18,21 +18,23 @@ The current package uses local ad-hoc signing, without Developer ID signing or A
 - A quick paste panel opened with `⌘;`, horizontal card browsing using the mouse wheel, and animated panel dismissal when dragging content out.
 - Card context menus for editing, favoriting, pinning, copying, pasting and deleting, with undo for deletion.
 - SQLite history and separate attachments, backups, restore and custom history storage.
-- Clipboard stacks, quick replies, screenshots/OCR, and configurable AI, scripting, LAN sharing, upload and translation tools.
+- Clipboard stacks, quick replies, screenshot annotation, image OCR, and configurable AI, scripting, LAN sharing, upload and translation tools.
+- The screenshot shortcut opens selection and a floating annotation toolbar directly. Add arrows, text or mosaics before copying or saving. Customize the shortcut under Settings → Shortcuts → Screenshot. See the [capture guide (Chinese)](docs/screenshot-annotation.md).
+- Scrolling capture, screen recording and MP4/GIF/WebP export, image pins, table/barcode recognition and offline formula rendering. Translation and image-to-formula recognition use your configured services. See the [0.4.0 workflow and validation scope (Chinese)](docs/pixpin-complete-validation.md).
 - Instant Simplified Chinese / English switching across tool pages, menus and application error messages.
 
 See the [implementation status](docs/implementation-status.md) for scope and known limitations, and the [development guide](docs/BUILDING.md) for usage. AI, upload and translation services require your own configuration.
 
 ## Build and run
 
-Running requires macOS 14+. Building requires Xcode with the macOS 26 SDK and Python 3. From the repository root:
+Running requires macOS 14+. Building requires Xcode with the macOS 26 SDK, Python 3 and CMake. From the repository root:
 
 ```bash
 ./src/build.sh
 open src/dist/Xclip.app
 ```
 
-The default build produces a universal Apple Silicon / Intel app with local ad-hoc signing. The Xcode project is `src/Xclip.xcodeproj`, with the `Xclip` scheme. See the [development guide](docs/BUILDING.md) for build options, isolated tests and permissions.
+The default build produces a universal Apple Silicon / Intel app and reuses the installed signing certificate. A new installation selects the only available identity, or uses ad-hoc signing when none is available. Missing previously used certificates or ambiguous identities stop the build. The Xcode project is `src/Xclip.xcodeproj`, with the `Xclip` scheme. See the [development guide](docs/BUILDING.md) for build options, isolated tests and permissions.
 
 Run `./scripts/package-release.sh` to package the current build as DMG, ZIP and `SHA256SUMS` in the root `dist/` directory. See the [release notes](docs/RELEASE.md) for validation scope and limitations.
 

@@ -54,3 +54,12 @@ licensing-system/
 *.p12
 *.p8
 *.mobileprovision
+
+# Local task and machine-specific acceptance records
+docs/permission-update-task-spec.md
+docs/permission-update-validation.md
+docs/pixpin-complete-task-spec.md
+docs/pixpin-refinement-task-spec.md
+docs/pixpin-refinement-validation.md
+docs/screenshot-task-spec.md
+docs/screenshot-validation.md

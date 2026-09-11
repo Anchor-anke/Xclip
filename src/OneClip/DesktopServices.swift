@@ -62,11 +62,16 @@ class PasteCoordinator: ObservableObject {
 /// One Carbon handler dispatches all app and template shortcuts and reports registration conflicts.
 class GlobalShortcuts: ObservableObject {
     static let shared = GlobalShortcuts()
+    static let optionalActions = ["captureOCR", "captureLong", "captureRecord", "pinClipboard", "restorePin", "togglePins", "resetPinPassthrough"]
+    static var allActions: [String] { (Array(defaults.keys) + optionalActions).sorted() }
     @Published var errors: [String] = []
     private var registrationFailures: [(name: String, label: String, result: OSStatus, isAppAction: Bool)] = []
     private var languageObserver: NSObjectProtocol?
     private var references: [EventHotKeyRef] = []
     private var callbacks: [UInt32: () -> Void] = [:]
+    private var actions: [String: () -> Void] = [:]
+    private var recordingShortcut = false
+    private var registrationActivated = false
     private var handler: EventHandlerRef?
     static let defaults: [String: ShortcutSpec] = [
         "history": .init(keyCode: 9, modifiers: NSEvent.ModifierFlags([.command, .shift]).rawValue, label: "⌘⇧V"),
@@ -91,7 +96,14 @@ class GlobalShortcuts: ObservableObject {
         case "replies": return L("快捷回复", "Quick replies")
         case "shelf": return L("拖拽容器", "Drop shelf")
         case "quick": return L("快速粘贴", "Quick paste")
-        case "capture": return L("截图与 OCR", "Capture & OCR")
+        case "capture": return L("截屏 / 结束录屏", "Screenshot / stop recording")
+        case "captureOCR": return L("截图识别文字", "Capture and recognize text")
+        case "captureLong": return L("长截图", "Scrolling capture")
+        case "captureRecord": return L("录屏 / 动图", "Record / GIF")
+        case "pinClipboard": return L("剪贴板贴图", "Pin clipboard")
+        case "restorePin": return L("恢复上次贴图", "Restore last pin")
+        case "togglePins": return L("隐藏 / 显示全部贴图", "Hide / show all pins")
+        case "resetPinPassthrough": return L("恢复贴图鼠标交互", "Restore pin mouse interaction")
         case "split": return L("分词入栈", "Split text into stack")
         default: return action
         }
@@ -104,9 +116,45 @@ class GlobalShortcuts: ObservableObject {
         }
     }
 
+    static func conflictDescription(for spec: ShortcutSpec, excluding action: String, in document: WorkflowDocument) -> String? {
+        let supported: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
+        func matches(_ other: ShortcutSpec) -> Bool {
+            spec.keyCode == other.keyCode && spec.flags.intersection(supported) == other.flags.intersection(supported)
+        }
+        for name in Set(allActions + Array(document.shortcuts.keys)).sorted() where name != action {
+            if let other = document.shortcuts[name] ?? defaults[name], matches(other) {
+                return L("此快捷键已用于“\(title(for: name))”，请使用其他组合。", "This shortcut is used by “\(title(for: name))”. Choose another combination.")
+            }
+        }
+        for reply in document.replies {
+            if let other = reply.hotkey, matches(other) {
+                return L("此快捷键已用于快捷回复“\(reply.title)”，请使用其他组合。", "This shortcut is used by the quick reply “\(reply.title)”. Choose another combination.")
+            }
+        }
+        return nil
+    }
+
+    // Carbon consumes registered shortcuts before the recorder's local event monitor.
+    // Release them while recording so the current shortcut can be recorded safely.
+    func pauseForShortcutRecording() {
+        recordingShortcut = true
+        references.forEach { UnregisterEventHotKey($0) }; references.removeAll(); callbacks.removeAll()
+    }
+
+    func resumeAfterShortcutRecording() {
+        guard recordingShortcut else { return }
+        recordingShortcut = false
+        // Preview/test processes that never registered must stay inactive, including replies.
+        guard registrationActivated else { return }
+        register(actions: actions)
+    }
+
     func register(actions: [String: () -> Void]) {
+        registrationActivated = true
+        self.actions = actions
         references.forEach { UnregisterEventHotKey($0) }; references.removeAll(); callbacks.removeAll(); errors.removeAll()
         registrationFailures.removeAll()
+        guard !recordingShortcut else { return }
         if handler == nil {
             var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
             InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
