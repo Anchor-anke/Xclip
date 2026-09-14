@@ -1,4 +1,34 @@
-# Xclip v0.4.0
+# Xclip 发布说明
+
+## Xclip v0.4.1
+
+版本：0.4.1（build 5）。macOS 14+，Apple Silicon / Intel 通用安装包。
+
+- 历史大内容按需读取，列表采用缩略图与容量受限的缓存；面板关闭后释放预览，编辑与贴图恢复增加预算，附件维护保护有效引用与迁移快照。
+- 修复原生拖拽期间的右键取消事件接收；保持左键按住也可取消，取消后恢复快速面板。
+- 快捷键新增“清除”，重启后保持停用；“恢复”仍使用默认绑定。
+- DMG / ZIP 新增 `安装 Xclip.app`，选择原位置后请求旧版正常退出、覆盖并重新打开，保留历史、附件和配置。退出失败时停止，替换失败时尝试回退。
+- 仓库增加独立 Windows 核心预览源码与 CI；本次 Release 提供 macOS 安装包。Windows 使用范围见 [Windows 说明](../windows/README.md)。
+
+### 下载与升级
+
+[0.4.1 Release](https://github.com/Anchor-anke/Xclip/releases/tag/v0.4.1) 提供 `Xclip-v0.4.1-macOS-universal.dmg`、同名 ZIP 和 `SHA256SUMS`。下载两个包后运行 `shasum -a 256 -c SHA256SUMS`。
+
+升级前备份数据。0.4.1 会迁移历史内容引用，并将导出归档升级到版本 2；0.4.0 无法直接读取新版数据，回退需使用升级前备份。完整操作见[升级与回退说明](UPGRADING.md)。
+
+应用及安装器沿用稳定本地开发证书，未经过 Developer ID 签名与 Apple 公证。截图和自动粘贴仍需对应系统权限。安装器只处理所选位置，不跨目录清理其他副本，不在线下载更新。
+
+### 验证范围
+
+2026-09-14 对本版本重新构建并执行 `scripts/test.sh`，完整回归通过，包括应用 smoke 97 项、快速面板 116 项、内存专项 41 项、存储迁移 26 项、原有存储 56 项、覆盖安装器 45 项，以及截图、标注、录屏、快捷键和备份等检查。此次快速面板可见性及动画断言通过。
+
+额外执行 `scripts/test-drag-cancellation.sh --native`：164 项状态/队列断言及 4 种原生拖拽会话通过。Windows 跨平台核心测试 21 项通过。
+
+DMG 校验及只读挂载检查通过，DMG / ZIP 内应用的 81 个文件与发布构建逐一一致；应用、辅助程序及覆盖安装器均通过双架构与严格验签，源码和包内文件扫描未发现用户数据、个人源码路径或密钥模式。
+
+缓存预算不等于进程总内存上限，合成测试不能替代真实跨应用鼠标操作、多屏环境和长期稳定性验收。Windows 原生测试和设备验收以对应环境结果为准。
+
+## 已发布：Xclip v0.4.0
 
 版本：0.4.0（build 4）。运行要求：macOS 14+，同一安装包支持 Apple Silicon 和 Intel。
 
@@ -38,7 +68,7 @@
 
 1. 在 `src/Xclip.xcodeproj/project.pbxproj` 更新版本和 build。
 2. 执行 `./src/build.sh` 与 [开发指南](BUILDING.md) 列出的回归。
-3. 执行 `./scripts/package-release.sh`，核对 DMG 和 ZIP 中的版本、架构、签名、资源及哈希。发布未安装的候选包时，可设置 `XCLIP_PACKAGE_APP` 为完整 `.app` 路径。
+3. 执行 `./scripts/package-release.sh`，核对 DMG 和 ZIP 中的版本、架构、签名、资源及哈希，包括覆盖安装器与同目录的 `Xclip.app`。发布未安装的候选包时，可设置 `XCLIP_PACKAGE_APP` 为完整 `.app` 路径，并用 `XCLIP_PACKAGE_OUTPUT_DIR` 保留现有发布资产。原生安装器需要源应用的稳定证书及私钥。
 4. 将源码提交到 main，为同一提交创建版本标签与 GitHub Release，上传 `dist/` 中的两个包和校验文件，再核对远端提交及下载校验值。
 
 构建产物、本机授权记录和本地执行日志不进入源码提交。

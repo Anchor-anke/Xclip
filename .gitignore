@@ -63,3 +63,14 @@ docs/pixpin-refinement-task-spec.md
 docs/pixpin-refinement-validation.md
 docs/screenshot-task-spec.md
 docs/screenshot-validation.md
+docs/drag-cancel-task-spec.md
+docs/drag-cancel-validation.md
+docs/local-update-20260914.md
+docs/memory-cache-audit-20260914.md
+docs/memory-optimization-plan.md
+docs/memory-optimization-task-spec.md
+docs/memory-optimization-validation.md
+docs/overwrite-install-task-spec.md
+docs/overwrite-install-validation.md
+docs/windows-task-spec.md
+docs/windows-validation.md

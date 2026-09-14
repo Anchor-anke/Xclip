@@ -13,8 +13,14 @@ enum AppSmokeTests {
     @MainActor static func run() throws {
         let isolated = ProcessInfo.processInfo.environment["CCLIP_DATA_DIR"] ?? Bundle.main.object(forInfoDictionaryKey: "CClipTestDataDirectory") as? String
         guard let isolated, !isolated.isEmpty else { throw AutomationError.invalid("Set CCLIP_DATA_DIR to an empty temporary directory before running smoke tests.") }
+        try expect(NSApp is XclipApplication, "Application bootstrap installs the native drag cancellation event queue")
         let root = StoragePaths.dataDirectory.appendingPathComponent("smoke-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        if ProcessInfo.processInfo.environment["CCLIP_SMOKE_SCOPE"] == "memory" {
+            try MemoryOptimizationTests.run(root: root)
+            print("AppSmokeTests: memory scope only; full application regression was not run.")
+            return
+        }
         let board = NSPasteboard(name: .init("CClip.SyntheticSmoke.Input.\(UUID().uuidString)"))
         let output = NSPasteboard(name: .init("CClip.SyntheticSmoke.Output.\(UUID().uuidString)"))
         defer { board.releaseGlobally(); output.releaseGlobally() }
@@ -36,6 +42,7 @@ enum AppSmokeTests {
         try QuickPasteTests.run(manager: manager, root: root)
         try QuickPasteContextMenuTests.run()
         try ClipboardSourceTests.run(root: root, settings: settings)
+        try MemoryOptimizationTests.run(root: root)
         print("AppSmokeTests: \(checks) checks passed. Synthetic named pasteboards; no general clipboard, permissions or network requests.")
     }
     private static func captureAndFormats(_ manager: ClipboardManager, _ board: NSPasteboard, _ output: NSPasteboard) throws {

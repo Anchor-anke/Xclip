@@ -1,10 +1,11 @@
 import Foundation
 import CryptoKit
+import Darwin
 
 /// A single portable JSON file: item metadata plus every referenced file and directory.
 /// Paths inside this format are relative to the archive, never to the exporting computer.
 struct HistoryArchive: Codable {
-    static let currentVersion = 1
+    static let currentVersion = 2
     var format = "CClip History Archive"
     var version = currentVersion
     var createdAt = Date()
@@ -20,6 +21,72 @@ struct HistoryArchive: Codable {
         var isDirectory: Bool
         var data: Data?
         var sha256: String?
+    }
+
+    /// Stream attachment bytes into a portable JSON archive without assembling all files in RAM.
+    static func write(items: [ClipboardItem], additionalItems: [ClipboardItem] = [], to destination: URL,
+                      extraFiles: ([ClipboardItem]) throws -> [String: Data] = { _ in [:] }) throws {
+        struct Entry { let source: URL; let path: String; let directory: Bool; let size: Int }
+        let fm = FileManager.default
+        var entries: [Entry] = [], replacements: [String: String] = [:]
+        func collect(_ source: URL, _ relative: String) throws {
+            let values = try source.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            guard values.isSymbolicLink != true, values.isDirectory == true || values.isRegularFile == true else {
+                throw ClipboardStorageError.unsupportedAttachment("备份附件类型不支持", "Unsupported backup attachment type")
+            }
+            entries.append(Entry(source: source, path: relative, directory: values.isDirectory == true, size: values.fileSize ?? 0))
+            if values.isDirectory == true {
+                for child in try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil).sorted(by: { $0.path < $1.path }) {
+                    try collect(child, relative + "/" + child.lastPathComponent)
+                }
+            }
+        }
+        let all = items + additionalItems
+        for path in Set(all.flatMap { ClipboardAttachments.paths(in: $0) }).sorted() {
+            let source = ClipboardAttachments.url(for: path)
+            let relative = "attachments/\(UUID())/\(source.lastPathComponent)"
+            try collect(source, relative); replacements[path] = relative
+        }
+        let portableItems = try items.map { try ClipboardAttachments.remap($0, using: replacements) }
+        let portableAdditional = try additionalItems.map { try ClipboardAttachments.remap($0, using: replacements) }
+        let extras = try extraFiles(portableAdditional)
+        let expected = Dictionary(all.flatMap(\.payloadReferences).map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+        let stage = destination.deletingLastPathComponent().appendingPathComponent(".xclip-export-\(UUID())")
+        guard fm.createFile(atPath: stage.path, contents: nil, attributes: [.posixPermissions: 0o600]) else { throw ClipboardStorageError.unavailable }
+        let output = try FileHandle(forWritingTo: stage)
+        defer { try? output.close(); try? fm.removeItem(at: stage) }
+        let encoder = JSONEncoder()
+        func raw(_ text: String) throws { try output.write(contentsOf: Data(text.utf8)) }
+        func encoded<T: Encodable>(_ value: T) throws { try output.write(contentsOf: encoder.encode(value)) }
+        try raw("{\"format\":\"CClip History Archive\",\"version\":\(currentVersion),\"createdAt\":")
+        try encoded(Date()); try raw(",\"items\":[")
+        for (index, item) in portableItems.enumerated() { if index > 0 { try raw(",") }; try encoded(item) }
+        try raw("],\"additionalItems\":[")
+        for (index, item) in portableAdditional.enumerated() { if index > 0 { try raw(",") }; try encoded(item) }
+        try raw("],\"extraFiles\":"); try encoded(extras); try raw(",\"files\":[")
+        for (index, entry) in entries.enumerated() {
+            if index > 0 { try raw(",") }
+            try raw("{\"path\":"); try encoded(entry.path)
+            if entry.directory { try raw(",\"isDirectory\":true}"); continue }
+            try raw(",\"isDirectory\":false,\"data\":\"")
+            let input = try FileHandle(forReadingFrom: entry.source)
+            var hash = SHA256(), carry = Data(), count = 0
+            do {
+                while let bytes = try input.read(upToCount: 192 * 1024), !bytes.isEmpty {
+                    hash.update(data: bytes); count += bytes.count; carry.append(bytes)
+                    let length = carry.count - carry.count % 3
+                    if length > 0 { try raw(carry.prefix(length).base64EncodedString()); carry = Data(carry.dropFirst(length)) }
+                }
+                try input.close()
+            } catch { try? input.close(); throw error }
+            if !carry.isEmpty { try raw(carry.base64EncodedString()) }
+            let digest = hash.finalize().map { String(format: "%02x", $0) }.joined()
+            guard count == entry.size else { throw ClipboardStorageError.invalidArchive("备份期间附件发生变化", "An attachment changed during backup") }
+            if let reference = expected[entry.source.path], reference.byteCount != count || reference.sha256 != digest { throw ClipboardBlobError.corrupted }
+            try raw("\",\"sha256\":\"\(digest)\"}")
+        }
+        try raw("]}"); try output.synchronize(); try output.close()
+        guard rename(stage.path, destination.path) == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
     }
 
     static func make(items: [ClipboardItem], additionalItems: [ClipboardItem] = [], extraFiles: [String: Data] = [:]) throws -> HistoryArchive {
@@ -38,7 +105,7 @@ struct HistoryArchive: Codable {
     }
 
     func validate() throws {
-        guard format == "CClip History Archive", version == Self.currentVersion else {
+        guard format == "CClip History Archive", (1...Self.currentVersion).contains(version) else {
             throw ClipboardStorageError.invalidArchive("不支持的备份格式或版本", "Unsupported backup format or version")
         }
         guard Set(items.map(\.id)).count == items.count else {
@@ -67,6 +134,12 @@ struct HistoryArchive: Codable {
                     throw ClipboardStorageError.invalidArchive("附件目录与文件冲突", "An attachment directory conflicts with a file")
                 }
                 parent = (parent as NSString).deletingLastPathComponent
+            }
+        }
+        for reference in (items + (additionalItems ?? [])).flatMap({ $0.payloadReferences }) {
+            guard let file = entries[reference.path], !file.isDirectory,
+                  file.data?.count == reference.byteCount, file.sha256 == reference.sha256 else {
+                throw ClipboardStorageError.invalidArchive("内容引用校验失败", "Content reference verification failed")
             }
         }
         for path in (items + (additionalItems ?? [])).flatMap({ ClipboardAttachments.paths(in: $0) }) {
@@ -154,7 +227,7 @@ enum ClipboardAttachments {
     }
 
     static func paths(in item: ClipboardItem) -> [String] {
-        var paths = item.fileURLs ?? []
+        var paths = (item.fileURLs ?? []) + item.payloadReferences.map(\.path)
         if let path = item.filePath, !path.isEmpty { paths.append(path) }
         if let rows = metadata(in: item) { paths += rows.compactMap { $0["path"] as? String } }
         if let legacy = legacyTextPaths(in: item) { paths += legacy }
@@ -178,7 +251,10 @@ enum ClipboardAttachments {
             result.data = updated.joined(separator: "\n").data(using: .utf8)
             if result.fileURLs == nil { result.fileURLs = updated }
         }
-        if var representations = result.representations {
+        let pathTypes: Set<String> = ["public.file-url", "NSFilenamesPboardType"]
+        let hasPathFormats = !(Set(item.representationReferences?.keys.map { $0 } ?? []).intersection(pathTypes)).isEmpty
+            || (item.representationReferences == nil && item.representations?.keys.contains(where: { pathTypes.contains($0) }) == true)
+        if hasPathFormats, var representations = try item.resolvedRepresentations() {
             for (type, bytes) in representations {
                 if type == "public.file-url", let text = String(data: bytes, encoding: .utf8) {
                     let original = url(for: text).path
@@ -193,6 +269,7 @@ enum ClipboardAttachments {
             }
             result.representations = representations
         }
+        result.remapPayloadReferences(replacements)
         return result
     }
 }

@@ -5,7 +5,7 @@ import SwiftUI
 /// Detached writers remain valid after the temporary pasteboard is released.
 enum QuickPasteDragPayload {
     static func writers(for item: ClipboardItem, manager: ClipboardManager = .shared) throws -> [NSPasteboardWriting] {
-        var sanitized = item
+        var sanitized = try item.materialized()
         let omittedTypes: Set<String> = [
             NSPasteboard.PasteboardType.fileURL.rawValue,
             "NSFilenamesPboardType", "com.apple.pasteboard.promised-file-url",
@@ -74,7 +74,7 @@ struct QuickPasteDragView: NSViewRepresentable {
     var onSelect: () -> Void
     var onActivate: () -> Void
     var onDragBegan: () -> Void
-    var onDragEnded: (Bool) -> Void
+    var onDragEnded: (DragCompletion) -> Void
     var onContextAction: (QuickPasteContextAction, UUID) -> Void = { _, _ in }
     var onContextMenuTrackingChanged: (Bool) -> Void = { _ in }
     var isInteractionEnabled = true
@@ -103,7 +103,8 @@ struct QuickPasteDragView: NSViewRepresentable {
         view.setAccessibilityRole(.button)
         view.setAccessibilityLabel(ClipboardSourceInfo.name(for: item) + " · " + quickPasteKind(item) + " · " + String(item.displayContent.prefix(160)))
         view.setAccessibilityValue(isSelected ? L("已选中", "Selected") : "")
-        view.setAccessibilityHelp(L("单击选择，双击粘贴，拖动到目标应用；右键可修改、收藏或删除。", "Click to select, double-click to paste, or drag to the destination app. Right-click to edit, favorite, or delete."))
+        view.toolTip = L("拖拽中按右键取消。", "Right-click during a drag to cancel.")
+        view.setAccessibilityHelp(L("单击选择，双击粘贴，拖动到目标应用；拖拽中按右键取消。平时右键可修改、收藏或删除。", "Click to select, double-click to paste, or drag to the destination app. Right-click during a drag to cancel; otherwise right-click to edit, favorite, or delete."))
     }
 }
 
@@ -113,14 +114,14 @@ final class QuickPasteDragHostingView: NSHostingView<AnyView> {
     var onSelect: () -> Void = {}
     var onActivate: () -> Void = {}
     var onDragBegan: () -> Void = {}
-    var onDragEnded: (Bool) -> Void = { _ in }
+    var onDragEnded: (DragCompletion) -> Void = { _ in }
     var onContextAction: (QuickPasteContextAction, UUID) -> Void = { _, _ in }
     var onContextMenuTrackingChanged: (Bool) -> Void = { _ in }
     var isInteractionEnabled = true
     private var mouseDownLocation: NSPoint?
     private var attemptedDrag = false
     private var activeDrag = false
-    private var dragEndHandler: ((Bool) -> Void)?
+    private var dragEndHandler: ((DragCompletion) -> Void)?
     private var dragSource: QuickPasteDraggingSource?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -128,7 +129,8 @@ final class QuickPasteDragHostingView: NSHostingView<AnyView> {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard isInteractionEnabled, !PrivacyLock.shared.locked, !activeDrag else { return }
+        guard isInteractionEnabled, !PrivacyLock.shared.locked, !activeDrag,
+              DragCancellationController.shared.canBeginDrag else { return }
         if event.modifierFlags.contains(.control) { showContextMenu(with: event); return }
         mouseDownLocation = event.locationInWindow
         attemptedDrag = false
@@ -161,6 +163,7 @@ final class QuickPasteDragHostingView: NSHostingView<AnyView> {
 
     override func mouseDragged(with event: NSEvent) {
         guard isInteractionEnabled, !PrivacyLock.shared.locked, !attemptedDrag, !activeDrag,
+              DragCancellationController.shared.canBeginDrag,
               let origin = mouseDownLocation, let item else { return }
         let delta = event.locationInWindow
         guard hypot(delta.x - origin.x, delta.y - origin.y) >= 5 else { return }
@@ -187,13 +190,13 @@ final class QuickPasteDragHostingView: NSHostingView<AnyView> {
             let source = QuickPasteDraggingSource(onBegin: { [self] in
                 self.activeDrag = true
                 self.onDragBegan()
-            }, onEnd: { [self] accepted in
+            }, onEnd: { [self] result in
                 self.activeDrag = false
                 self.mouseDownLocation = nil
                 let completion = self.dragEndHandler
                 self.dragEndHandler = nil
                 self.dragSource = nil
-                completion?(accepted)
+                completion?(result)
             })
             dragSource = source
             let session = beginDraggingSession(with: draggingItems, event: event, source: source)
@@ -218,23 +221,30 @@ final class QuickPasteDragHostingView: NSHostingView<AnyView> {
 
 private final class QuickPasteDraggingSource: NSObject, NSDraggingSource {
     private let onBegin: () -> Void
-    private let onEnd: (Bool) -> Void
+    private let onEnd: (DragCompletion) -> Void
+    private var cancellationToken: UUID?
+    private var ended = false
 
-    init(onBegin: @escaping () -> Void, onEnd: @escaping (Bool) -> Void) {
+    init(onBegin: @escaping () -> Void, onEnd: @escaping (DragCompletion) -> Void) {
         self.onBegin = onBegin
         self.onEnd = onEnd
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        PrivacyLock.shared.locked ? [] : .copy
+        PrivacyLock.shared.locked || DragCancellationController.shared.isCancelled(cancellationToken) ? [] : .copy
     }
 
     func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
+        cancellationToken = DragCancellationController.shared.begin()
         session.animatesToStartingPositionsOnCancelOrFail = false
         onBegin()
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        onEnd(operation != [])
+        guard !ended else { return }
+        ended = true
+        let cancelled = DragCancellationController.shared.end(cancellationToken)
+        cancellationToken = nil
+        onEnd(operation != [] ? .accepted : cancelled ? .cancelled : .notAccepted)
     }
 }

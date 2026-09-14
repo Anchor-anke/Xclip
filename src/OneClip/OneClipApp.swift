@@ -13,7 +13,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var screenshotRequestPending = false
     private var externalScreenshotConfirmationOpen = false
     func applicationDidFinishLaunching(_ notification: Notification) {
-        Task { @MainActor in CaptureWorkflowCoordinator.shared.prepare() }
+        Task { @MainActor in
+            CaptureWorkflowCoordinator.shared.prepare()
+            PinnedImageController.shared.allowsDiskHistory = { SettingsManager.shared.enableHistoryPersistence }
+        }
         if ProcessInfo.processInfo.arguments.contains("--smoke-test") {
             do { try AppSmokeTests.run(); exit(0) } catch { fputs("Smoke test failed: \(error.localizedDescription)\n", stderr); exit(1) }
         }
@@ -39,7 +42,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyCapturePreferences()
         _ = PasteCoordinator.shared
         _ = AIService.shared
-        if !isUITest { clipboard.startMonitoring() }
+        if !isUITest {
+            clipboard.startMonitoring()
+            DispatchQueue.global(qos: .utility).async { SessionTemporaryFiles.cleanupOrphans() }
+        }
         DesktopEvents.shared.show = { [weak self] section in self?.show(section) }
         if !isUITest { DesktopEvents.shared.configure() }
         menuBar.onLeftClick = { [weak self] in self?.show("quick") }
@@ -54,7 +60,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if PrivacyLock.shared.enabled { PrivacyLock.shared.lock() }
         })
         if !isUITest { registerShortcuts() }
-        backupTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in ClipboardManager.shared.performManualCleanup(); WorkspaceBackup.shared.automaticBackupIfDue() }
+        backupTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+            ClipboardManager.shared.performManualCleanup()
+            WorkspaceBackup.shared.automaticBackupIfDue()
+            let document = WorkflowState.shared.document
+            ClipboardManager.shared.maintainStorage(preserving: document.stack + document.shelf + document.replies.map(\.item))
+            if SettingsManager.shared.enableHistoryPersistence, self?.mainWindow?.isVisible != true,
+               self?.quickPanel.isPresented != true, !NSApp.windows.contains(where: { $0.isVisible && $0.level >= .floating }) {
+                let store = ClipboardManager.shared.store
+                DispatchQueue.global(qos: .utility).async { _ = try? store.compactIfNeeded() }
+            }
+        }
         DispatchQueue.main.async {
             self.mainWindow = NSApp.windows.first(where: { $0.title == "Xclip" })
             self.mainWindow?.identifier = NSUserInterfaceItemIdentifier("main")
@@ -142,7 +158,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         add(L("打开 Xclip", "Open Xclip"), action: #selector(menuShow), represented: "history")
         if !PrivacyLock.shared.locked {
-            let captureKey = (WorkflowState.shared.document.shortcuts["capture"] ?? GlobalShortcuts.defaults["capture"])?.label ?? ""
+            let captureKey = GlobalShortcuts.effectiveShortcut(for: "capture", in: WorkflowState.shared.document)?.label ?? ""
             add(L("截屏", "Screenshot") + "  " + captureKey, action: #selector(menuShow), represented: "capture")
             add(L("剪贴板贴图", "Pin clipboard"), action: #selector(menuPin), represented: "clipboard")
             add(L("恢复上次贴图", "Restore last pin"), action: #selector(menuPin), represented: "restore")
@@ -238,7 +254,16 @@ private struct FloatingClipView: View {
     var body: some View { VStack { ClipPreview(item: item); HStack { Slider(value: $opacity, in: 0.25...1).accessibilityLabel(L("透明度", "Opacity")).onChange(of: opacity) { _, value in panel.alphaValue = value }; Button(L("复制", "Copy")) { ClipboardManager.shared.copyToClipboard(item: item) }; Button(L("关闭", "Close")) { panel.close() }.keyboardShortcut(.cancelAction) } }.padding(12) }
 }
 
+// SwiftUI otherwise creates its own NSApplication and ignores NSPrincipalClass.
+// Establish our event queue before SwiftUI builds the existing scenes/delegate.
 @main
+enum XclipEntryPoint {
+    static func main() {
+        _ = XclipApplication.shared
+        OneClipApp.main()
+    }
+}
+
 struct OneClipApp: App {
     @ObservedObject private var appLanguage = AppLanguage.shared
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate

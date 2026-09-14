@@ -1,5 +1,12 @@
 import AppKit
 
+// Pin rendering tests use an isolated lock dependency; production PrivacyLock
+// and its Keychain behavior are exercised separately by PrivacyLockTests.
+final class PrivacyLock {
+    static let shared = PrivacyLock()
+    var locked = false
+}
+
 @MainActor
 @main
 struct PinnedImageTests {

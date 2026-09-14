@@ -53,21 +53,41 @@ python3 scripts/install-local.py --source /实际暂存路径/Xclip.app
 
 ## 发布打包
 
-打包脚本默认使用 `src/dist/Xclip.app`，需要先完成构建与验证。运行：
+0.4.1 发布包包含原生覆盖安装器。打包脚本默认使用 `src/dist/Xclip.app`，需要先完成构建与验证，且输入应用必须使用可用的稳定证书签名。运行：
 
 ```bash
 ./scripts/package-release.sh
 ```
 
-也可通过 `XCLIP_PACKAGE_APP=/完整路径/Xclip.app ./scripts/package-release.sh` 打包尚未安装的已验签候选版本，不替换正在使用的本地应用。
+也可指定尚未安装的候选应用和独立输出目录，不替换正在使用的本地应用，也不覆盖已有发布资产：
 
-打包脚本从应用的 `Info.plist` 读取版本，将发布用 DMG、ZIP 和 `SHA256SUMS` 写入仓库根目录 `dist/`；这与默认应用输出目录 `src/dist/` 不同。版本 0.4.0 的文件名为 `Xclip-v0.4.0-macOS-universal.dmg` 和 `Xclip-v0.4.0-macOS-universal.zip`。上传 Release 前可在输出目录校验文件：
+```bash
+XCLIP_PACKAGE_APP=/完整路径/Xclip.app \
+XCLIP_PACKAGE_OUTPUT_DIR="$PWD/.build/overwrite-installer-delivery" \
+./scripts/package-release.sh
+```
+
+打包脚本从应用的 `Info.plist` 读取版本，将 DMG、ZIP 和 `SHA256SUMS` 写入 `XCLIP_PACKAGE_OUTPUT_DIR`，未设置时为仓库根目录 `dist/`。DMG 和 ZIP 都包含 `Xclip.app`、`安装 Xclip.app` 与 `INSTALL.txt`。文件名继续按输入版本生成，例如 `Xclip-v0.4.1-macOS-universal.dmg`；同版本的候选包应使用独立目录，发布前再更新正式版本。上传 Release 前可在实际输出目录校验文件：
 
 ```bash
 (cd dist && shasum -a 256 -c SHA256SUMS)
 ```
 
-打包、上传 Release、Developer ID 签名和 Apple 公证是不同步骤。0.4.0 发布包使用稳定的本地开发证书，未经过 Developer ID 签名和 Apple 公证。打包脚本不会重新签名，生成的安装包保留输入应用的签名。发布状态与资产说明见[发布指南](RELEASE.md)。
+打包、上传 Release、Developer ID 签名和 Apple 公证是不同步骤。0.4.1 发布包使用稳定的本地开发证书，未经过 Developer ID 签名和 Apple 公证。打包保留输入 Xclip 的签名，并用该应用实际使用的证书编译、签名覆盖安装器，不接受环境变量将安装器换签为另一身份。源证书及私钥不可用时停止；ad-hoc 应用不能生成此覆盖安装包，仍可手动拖放安装。发布状态与资产说明见[发布指南](RELEASE.md)。
+
+## 原生覆盖安装器
+
+打开 DMG 或完整解压 ZIP 后，双击 `安装 Xclip.app`，选择旧版所在位置并安装，无需先删除应用。安装器与新版 `Xclip.app` 应保留在同一目录；若未能自动找到新版，点击「选择新版应用…」并选择安装包内的 `Xclip.app`。它会校验新版与目标应用的标识、签名及版本，请求所选位置的旧版正常退出，再暂存、覆盖并重新打开。无法正常退出时停止，不会强制结束进程；替换失败时尝试恢复旧版并显示结果。
+
+覆盖安装只修改所选位置的应用包，保留 `~/Library/Application Support/CClip`、自定义历史目录及既有偏好。它不会执行本地开发脚本的跨目录旧副本清理，也没有线上检查版本或下载更新功能。不同证书、ad-hoc 签名、损坏应用或降级更新会被拒绝；旧 ad-hoc 版本需要先退出并手动替换为证书版。稳定签名有助于维持权限，但不保证系统永远不再要求授权。
+
+只构建安装器、不打包或安装时：
+
+```bash
+./scripts/build-overwrite-installer.sh /完整路径/Xclip.app /未使用的输出目录/安装\ Xclip.app
+```
+
+脚本从源应用读取版本，使用 Swift 5 / macOS 14 目标构建 arm64 与 x86_64 通用程序 `XclipInstaller`，bundle ID 为 `local.cclip.installer`，并验证所有架构的签名。构建结果不会自行启动或替换应用；分发时应将源 `Xclip.app` 放到安装器旁。
 
 ## 签名与权限
 
@@ -115,6 +135,8 @@ Apple 说明默认签名要求用于让系统将后续版本识别为同一个�
 ```
 
 `test.sh` 包含存储、图片处理与 OCR、脚本隔离和超时、请求构造与解析、上传/翻译、隐私锁状态及应用 smoke 回归。上传和翻译请求使用拦截会话；`--network` 增加本机回环收发测试，不请求真实外部服务。
+
+拖拽取消的状态检查包含在 `test.sh`。原生事件队列和真实拖拽会话可单独运行 `./scripts/test-drag-cancellation.sh --native`：测试只向自身队列发送合成事件，验证取消时无须收到左键松开事件，并覆盖隐藏源窗口。该检查不能代替真实鼠标长按左键、右键取消及跨应用目标不接收的手工验收。
 
 0.4.0 还包含 `test-capture-complete.sh`：高级标注、贴图、长截图、录屏/动图与本地公式检查。Vision、HEIC、WebKit、音频编解码测试需要 macOS 图形会话和系统服务访问，受限沙箱可能阻止这些服务；测试只处理生成的图片/音频及命名剪贴板，不请求屏幕或麦克风权限。
 

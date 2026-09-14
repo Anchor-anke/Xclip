@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>Xclip.ico</ApplicationIcon>
+    <AssemblyName>Xclip</AssemblyName>
+    <RootNamespace>Xclip.Windows</RootNamespace>
+    <Version>0.1.0</Version>
+    <Product>Xclip Windows Preview</Product>
+    <Description>Xclip Windows 核心功能预览版</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Xclip.Core/Xclip.Core.csproj" />
+    <None Include="../../LICENSE" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../NOTICE.md" Link="NOTICE.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../PACKAGE-README.txt" Link="README.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../licenses/*.txt" Link="licenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

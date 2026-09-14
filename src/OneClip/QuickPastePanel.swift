@@ -101,6 +101,17 @@ final class QuickPastePanelController: NSObject, NSWindowDelegate {
         panel?.alphaValue = 1
         panel?.ignoresMouseEvents = false
         removeMonitors()
+        releaseHiddenContentAfterDrag()
+    }
+
+    private func releaseHiddenContentAfterDrag() {
+        let token = generation
+        // Run after the AppKit drag completion stack unwinds, never during a drag.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.generation == token, !self.isDragging, !self.isPresented else { return }
+            self.panel?.contentView = nil
+            ClipboardThumbnailCache.shared.clear()
+        }
     }
 
     func showEditor(_ item: ClipboardItem, onClose: @escaping () -> Void) {
@@ -168,7 +179,7 @@ final class QuickPastePanelController: NSObject, NSWindowDelegate {
             guard let self, self.generation == token else { return }
             // Ordering out doesn't release the content or interrupt the system drag session.
             panel.orderOut(nil)
-            if !forDrag { panel.alphaValue = 1 }
+            if !forDrag { panel.alphaValue = 1; self.releaseHiddenContentAfterDrag() }
         }
     }
 

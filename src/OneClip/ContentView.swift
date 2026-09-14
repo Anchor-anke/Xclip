@@ -28,7 +28,7 @@ struct ContentView: View {
                                 HStack {
                                     Label(L("截屏", "Screenshot"), systemImage: "viewfinder")
                                     Spacer(minLength: 4)
-                                    Text((workflow.document.shortcuts["capture"] ?? GlobalShortcuts.defaults["capture"])?.label ?? "")
+                                    Text(GlobalShortcuts.effectiveShortcut(for: "capture", in: workflow.document)?.label ?? "")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }.contentShape(Rectangle())
                             }
@@ -100,9 +100,10 @@ struct HistoryView: View {
     @State private var recentDays = 0
     @State private var editItem: ClipboardItem?
     @State private var confirmClear = false
+    @State private var displayLimit = 100
     @FocusState private var searchFocused: Bool
     private var items: [ClipboardItem] {
-        clipboard.searchItems(with: clipboard.searchText).filter { item in
+        clipboard.filteredItems.filter { item in
             (!favoritesOnly || item.isFavorite) && (type == "all" || item.type.rawValue == type)
                 && (source.isEmpty || ClipboardSourceInfo.searchText(for: item).localizedStandardContains(source))
                 && (tag == "all" || item.tags.contains(tag))
@@ -130,8 +131,9 @@ struct HistoryView: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if workflow.document.layout == "list" {
                 List(selection: $selected) {
-                    ForEach(items) { item in
+                    ForEach(Array(items.prefix(displayLimit))) { item in
                         HistoryRow(item: item, query: clipboard.searchText).tag(item.id)
+                            .onAppear { revealMore(after: item) }
                             .contextMenu { itemMenu(item) }
                             .onDrag { dragProvider(item) }
                             .onTapGesture(count: 2) { PasteCoordinator.shared.paste(item) }
@@ -140,9 +142,9 @@ struct HistoryView: View {
             } else {
                 ScrollView(workflow.document.layout == "horizontal" ? .horizontal : .vertical) {
                     if workflow.document.layout == "horizontal" {
-                        LazyHStack(spacing: 12) { ForEach(items) { card($0) } }.padding()
+                        LazyHStack(spacing: 12) { ForEach(Array(items.prefix(displayLimit))) { item in card(item).onAppear { revealMore(after: item) } } }.padding()
                     } else {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) { ForEach(items) { card($0) } }.padding()
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) { ForEach(Array(items.prefix(displayLimit))) { item in card(item).onAppear { revealMore(after: item) } } }.padding()
                     }
                 }
             }
@@ -181,6 +183,12 @@ struct HistoryView: View {
         .onDeleteCommand { clipboard.deleteItems(selectedItems); selected.removeAll() }
         .sheet(item: $editItem) { ClipEditor(item: $0) }
         .confirmationDialog(L("清理历史？收藏和置顶会保留。", "Clear history? Favorites and pinned items will be kept."), isPresented: $confirmClear) { Button(L("清理", "Clear"), role: .destructive) { clipboard.clearAllItems() } }
+    }
+    private func revealMore(after item: ClipboardItem) {
+        let current = items
+        if let index = current.firstIndex(where: { $0.id == item.id }), index >= displayLimit - 10 {
+            displayLimit = min(current.count, displayLimit + 100)
+        }
     }
     private var filters: some View {
         // Keep built-in option labels readable when the sidebar leaves a narrow detail column.
@@ -319,8 +327,8 @@ struct ClipPreview: View {
                 ClipboardSourceBadge(item: item).font(.caption).foregroundStyle(.secondary)
             }
             Group {
-                if item.type == .image, let image = imageForClip(item) { Image(nsImage: image).resizable().scaledToFit() }
-                else if item.type == .text || item.type == .code { ScrollView { Text(item.content).font(item.type == .code ? .system(.body, design: .monospaced) : .body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(8) } }
+                if item.type == .image { ClipboardThumbnail(item: item) }
+                else if item.type == .text || item.type == .code { ScrollView { Text(item.displayContent).font(item.type == .code ? .system(.body, design: .monospaced) : .body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(8) } }
                 else { VStack { Image(systemName: item.type.icon).font(.system(size: 40)); Text(item.displayContent).lineLimit(3); if let path = item.filePath { Button(L("快速查看", "Quick Look")) { quickLook(URL(fileURLWithPath: path)) } } } }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -328,6 +336,8 @@ struct ClipPreview: View {
 }
 func imageForClip(_ item: ClipboardItem) -> NSImage? { item.data.flatMap(NSImage.init(data:)) ?? item.filePath.flatMap(NSImage.init(contentsOfFile:)) }
 func dragProvider(_ item: ClipboardItem) -> NSItemProvider {
+    guard DragCancellationController.shared.canBeginDrag else { return NSItemProvider() }
+    _ = DragCancellationController.shared.begin(native: false)
     if let path = item.filePath { return NSItemProvider(contentsOf: URL(fileURLWithPath: path)) ?? NSItemProvider(object: item.content as NSString) }
     if let image = imageForClip(item) { return NSItemProvider(object: image) }
     return NSItemProvider(object: item.content as NSString)
@@ -339,7 +349,7 @@ func saveClip(_ item: ClipboardItem, to directory: URL) throws {
         for (index, path) in paths.enumerated() { let url = URL(fileURLWithPath: path); try FileManager.default.copyItem(at: url, to: directory.appendingPathComponent(prefix + "-\(index + 1)-" + url.lastPathComponent)) }
     } else if item.type == .image, let image = imageForClip(item), let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let png = bitmap.representation(using: .png, properties: [:]) {
         try png.write(to: directory.appendingPathComponent(prefix + ".png"))
-    } else { try item.content.write(to: directory.appendingPathComponent(prefix + ".txt"), atomically: true, encoding: .utf8) }
+    } else { try item.fullContent().write(to: directory.appendingPathComponent(prefix + ".txt"), atomically: true, encoding: .utf8) }
 }
 private final class PreviewSource: NSObject, QLPreviewPanelDataSource {
     static let shared = PreviewSource(); var url: URL?
@@ -360,6 +370,7 @@ struct ClipEditor: View {
     @State private var content = ""
     @State private var markdown = false
     @State private var qr: NSImage?
+    @State private var editingImageData: Data?
     @State private var saveError: Error?
     var body: some View {
         VStack(spacing: 14) {
@@ -367,8 +378,10 @@ struct ClipEditor: View {
             Text(ClipboardSourceInfo.detail(for: item))
                 .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if item.type == .image, let image = imageForClip(item), let data = image.tiffRepresentation {
-                ImageEditorView(imageData: data, onExport: saveImage)
+            if item.type == .image {
+                if let data = editingImageData {
+                    ImageEditorView(imageData: data, allowsDiskHistory: { SettingsManager.shared.enableHistoryPersistence }, onExport: saveImage)
+                } else if saveError == nil { ProgressView() }
             } else if ClipboardEditing.isTextEditable(item) {
                 if markdown { ScrollView { Text(.init(content)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) } }
                 else { TextEditor(text: $content).font(.system(.body, design: .monospaced)).border(Color.secondary.opacity(0.2)) }
@@ -387,7 +400,15 @@ struct ClipEditor: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
             }
-        }.padding(20).frame(minWidth: 640, minHeight: 490).onAppear { content = item.content }
+        }.padding(20).frame(minWidth: 640, minHeight: 490).onAppear {
+            do {
+                content = try item.fullContent()
+                if item.type == .image {
+                    editingImageData = try item.data ?? item.filePath.map { try Data(contentsOf: URL(fileURLWithPath: $0), options: .mappedIfSafe) }
+                    if editingImageData == nil { throw ClipboardError.dataCorrupted }
+                }
+            } catch { saveError = error }
+        }.onDisappear { editingImageData = nil; content = ""; qr = nil }
     }
     private func close() {
         if let onClose { onClose() } else { dismiss() }
@@ -447,7 +468,7 @@ struct StackView: View {
             HStack {
                 Text(L("分隔符", "Separator"))
                 TextField("\\n", text: $separator).frame(width: 90).help(L("\\n 表示换行，\\t 表示制表符", "\\n inserts a newline; \\t inserts a tab"))
-                Button(L("合并复制", "Copy joined")) { let delimiter = separator.replacingOccurrences(of: "\\n", with: "\n").replacingOccurrences(of: "\\t", with: "\t"); let item = ClipboardItem(id: UUID(), content: state.document.stack.map(\.content).joined(separator: delimiter), type: .text, timestamp: Date()); ClipboardManager.shared.copyToClipboard(item: item) }.disabled(state.document.stack.isEmpty)
+                Button(L("合并复制", "Copy joined")) { let delimiter = separator.replacingOccurrences(of: "\\n", with: "\n").replacingOccurrences(of: "\\t", with: "\t"); perform { let item = ClipboardItem(id: UUID(), content: try state.document.stack.map { try $0.fullContent() }.joined(separator: delimiter), type: .text, timestamp: Date()); try ClipboardManager.shared.writeToClipboard(item) } }.disabled(state.document.stack.isEmpty)
                 Spacer()
                 Button(L("清空栈", "Clear stack")) { state.document.stack.removeAll(); state.stackPasting = false }
             }

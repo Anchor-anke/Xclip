@@ -1,8 +1,8 @@
 import AppKit
 import UniformTypeIdentifiers
 
-struct PinnedImageContent {
-    enum Kind { case image, text, color, files, formula }
+struct PinnedImageContent: Codable {
+    enum Kind: String, Codable { case image, text, color, files, formula }
     var originalData: Data
     var kind: Kind = .image
     var text: String?
@@ -94,7 +94,7 @@ enum PinnedImageRendering {
 
 @MainActor
 final class PinnedImageModel {
-    let id = UUID()
+    private(set) var id = UUID()
     let content: PinnedImageContent
     let originalImage: CGImage
     private(set) var image: CGImage
@@ -117,6 +117,42 @@ final class PinnedImageModel {
         originalImage = try CaptureImageCodec.decode(content.originalData)
         var normalized = content; normalized.originalData = try CaptureImageCodec.png(originalImage); self.content = normalized
         image = originalImage; title = content.title
+    }
+    private struct Recovery: Codable {
+        let id: UUID
+        let content: PinnedImageContent
+        let image: Data
+        let editedData: Data?
+        let rotation: Int
+        let horizontalFlip: Bool
+        let verticalFlip: Bool
+        let scale: CGFloat
+        let opacity: CGFloat
+        let thumbnail: Bool
+        let crop: CGRect?
+        let previousScale: CGFloat?
+        let previousOpacity: CGFloat?
+        let locked: Bool
+        let onTop: Bool
+        let clickThrough: Bool
+        let shadow: Bool
+        let title: String
+    }
+    func recoveryData() throws -> Data {
+        try JSONEncoder().encode(Recovery(id: id, content: content, image: CaptureImageCodec.png(image), editedData: editedData,
+            rotation: rotation, horizontalFlip: horizontalFlip, verticalFlip: verticalFlip, scale: scale, opacity: opacity,
+            thumbnail: thumbnail, crop: crop, previousScale: lastScaleAndOpacity?.0, previousOpacity: lastScaleAndOpacity?.1,
+            locked: locked, onTop: onTop, clickThrough: clickThrough, shadow: shadow, title: title))
+    }
+    static func recover(_ data: Data) throws -> PinnedImageModel {
+        let saved = try JSONDecoder().decode(Recovery.self, from: data)
+        let model = try PinnedImageModel(content: saved.content)
+        model.id = saved.id; model.image = try CaptureImageCodec.decode(saved.image); model.editedData = saved.editedData
+        model.rotation = saved.rotation; model.horizontalFlip = saved.horizontalFlip; model.verticalFlip = saved.verticalFlip
+        model.scale = saved.scale; model.opacity = saved.opacity; model.thumbnail = saved.thumbnail; model.crop = saved.crop
+        if let scale = saved.previousScale, let opacity = saved.previousOpacity { model.lastScaleAndOpacity = (scale, opacity) }
+        model.locked = saved.locked; model.onTop = saved.onTop; model.clickThrough = saved.clickThrough; model.shadow = saved.shadow; model.title = saved.title
+        return model
     }
     var imageBounds: CGRect { CGRect(x: 0, y: 0, width: image.width, height: image.height) }
     var visibleRect: CGRect { thumbnail ? crop?.intersection(imageBounds) ?? imageBounds : imageBounds }
@@ -211,12 +247,36 @@ enum PinnedImagePresentation {
 }
 
 @MainActor
+private final class PinnedImageRecovery {
+    private var model: PinnedImageModel?
+    private var file: URL?
+    init(_ model: PinnedImageModel) { self.model = model }
+    var bytes: Int { model?.retainedBytes ?? 0 }
+    func read() throws -> PinnedImageModel {
+        if let model { return model }
+        guard let file else { throw CaptureToolError.invalidImage }
+        return try PinnedImageModel.recover(Data(contentsOf: file, options: .mappedIfSafe))
+    }
+    func spill() throws {
+        guard let model else { return }
+        let directory = try SessionTemporaryFiles.create(prefix: "xclip-pin-history-")
+        let target = directory.appendingPathComponent("snapshot.json")
+        do { try model.recoveryData().write(to: target, options: .atomic); file = target; self.model = nil }
+        catch { try? FileManager.default.removeItem(at: directory); throw error }
+    }
+    deinit { if let file { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) } }
+}
+
+@MainActor
 final class PinnedImageController: NSObject, NSWindowDelegate {
     static let shared = PinnedImageController()
     static let didChange = Notification.Name("XclipPinnedImagesChanged")
     private(set) var sessions: [UUID: PinnedImageSession] = [:]
     private var order: [UUID] = []
-    private var history: [(PinnedImageModel, CGRect)] = []
+    private var history: [(PinnedImageRecovery, CGRect)] = []
+    var allowsDiskHistory: () -> Bool = { false }
+    var historyBudget = 64 * 1024 * 1024
+    var historyResidentBytes: Int { history.reduce(0) { $0 + $1.0.bytes } }
     private(set) var isHidden = false
     private(set) var lastError: Error?
     let presentsWindows: Bool
@@ -295,10 +355,9 @@ final class PinnedImageController: NSObject, NSWindowDelegate {
         changed(); return model.id
     }
     @discardableResult func restoreLast() -> Bool {
-        guard let (model, frame) = history.popLast() else { return false }
-        model.clickThrough = false
-        do { _ = try present(model, at: frame, restoring: true); return true }
-        catch { history.append((model, frame)); report(error); return false }
+        guard let (recovery, frame) = history.popLast() else { return false }
+        do { let model = try recovery.read(); model.clickThrough = false; _ = try present(model, at: frame, restoring: true); return true }
+        catch { history.append((recovery, frame)); report(error); return false }
     }
     func toggleAll() {
         isHidden.toggle()
@@ -343,7 +402,7 @@ final class PinnedImageController: NSObject, NSWindowDelegate {
         guard let session = sessions.removeValue(forKey: id) else { return }
         order.removeAll { $0 == id }; session.cancelWork()
         session.resultWindows.forEach { if let sheet = $0.attachedSheet { $0.endSheet(sheet, returnCode: .cancel) }; $0.orderOut(nil); $0.contentView = nil; $0.close() }; session.resultWindows.removeAll()
-        if remember { history.append((session.model, session.window.frame)); trimHistory() }
+        if remember { history.append((PinnedImageRecovery(session.model), session.window.frame)); trimHistory() }
         session.window.delegate = nil; session.window.orderOut(nil); session.window.contentView = nil; session.window.close()
         changed()
     }
@@ -359,7 +418,12 @@ final class PinnedImageController: NSObject, NSWindowDelegate {
         }
     }
     private func trimHistory() {
-        while history.count > max(0, min(50, historyLimit)) || history.reduce(0, { $0 + $1.0.retainedBytes }) > 128 * 1024 * 1024 { history.removeFirst() }
+        while history.count > max(0, min(50, historyLimit)) { history.removeFirst() }
+        if allowsDiskHistory() {
+            do { for entry in history where historyResidentBytes > historyBudget { try entry.0.spill() } }
+            catch { report(error) }
+        }
+        while historyResidentBytes > max(0, historyBudget), !history.isEmpty { history.removeFirst() }
     }
     func refresh(_ session: PinnedImageSession, resize: Bool = true, frameOrigin: CGPoint? = nil) {
         let model = session.model, window = session.window
@@ -370,7 +434,7 @@ final class PinnedImageController: NSObject, NSWindowDelegate {
         window.alphaValue = model.opacity; window.level = model.onTop ? .floating : .normal
         window.ignoresMouseEvents = model.clickThrough; window.hasShadow = model.shadow
         window.title = model.title.isEmpty ? CaptureLocalization.text("Xclip 贴图", "Xclip Pinned Image") : model.title
-        session.canvas.toolTip = CaptureLocalization.text("拖动移动 · 滚轮缩放 · Ctrl 滚轮透明度 · 空格标注 · 右键更多", "Drag Move · Wheel Zoom · Ctrl Wheel Opacity · Space Annotate · Right-click More")
+        session.canvas.toolTip = CaptureLocalization.text("拖动移动 · Ctrl 拖出（右键取消）· 滚轮缩放 · Ctrl 滚轮透明度 · 空格标注 · 右键更多", "Drag Move · Ctrl Drag Out (Right-click Cancel) · Wheel Zoom · Ctrl Wheel Opacity · Space Annotate · Right-click More")
         session.canvas.setAccessibilityLabel(window.title + ", " + (model.locked ? CaptureLocalization.text("已锁定", "Locked") : CaptureLocalization.text("可移动", "Movable")))
         session.canvas.needsDisplay = true
         window.invalidateCursorRects(for: session.canvas)
@@ -510,6 +574,8 @@ final class PinnedImageCanvas: NSView, NSDraggingSource {
     private var cropHandle: CaptureSelectionHandle?
     private var rightStart: CGPoint?
     private var rightSelection: CGRect?
+    private var contentDragStarted = false
+    private var cancellationToken: UUID?
     private var message = ""
     private var messageUntil = Date.distantPast
 
@@ -558,6 +624,8 @@ final class PinnedImageCanvas: NSView, NSDraggingSource {
         }
     }
     override func mouseDown(with event: NSEvent) {
+        guard cancellationToken == nil, DragCancellationController.shared.canBeginDrag else { return }
+        contentDragStarted = false
         if owner?.presentsWindows == true { window?.makeKeyAndOrderFront(nil) }; window?.makeFirstResponder(self)
         if event.clickCount == 2 {
             if event.modifierFlags.contains(.shift) { owner?.change(model.id) { $0.toggleThumbnail() } }
@@ -578,7 +646,8 @@ final class PinnedImageCanvas: NSView, NSDraggingSource {
         }
     }
     override func mouseDragged(with event: NSEvent) {
-        guard !model.locked, let window, let start = dragStart, let frame = startingFrame else { return }
+        guard !contentDragStarted, DragCancellationController.shared.canBeginDrag,
+              !model.locked, let window, let start = dragStart, let frame = startingFrame else { return }
         let point = window.convertPoint(toScreen: event.locationInWindow)
         let delta = CGSize(width: point.x - start.x, height: point.y - start.y)
         if let crop = startingCrop, let handle = cropHandle {
@@ -752,7 +821,8 @@ final class PinnedImageCanvas: NSView, NSDraggingSource {
         if let session = owner?.sessions[model.id] { owner?.refresh(session, resize: false) }
     }
     private func beginContentDrag(_ event: NSEvent) {
-        guard let owner, owner.presentsWindows else { return }
+        guard !contentDragStarted, !PrivacyLock.shared.locked, DragCancellationController.shared.canBeginDrag,
+              let owner, owner.presentsWindows else { return }
         do {
             let writers: [NSPasteboardWriting]
             if model.content.kind == .files { writers = model.content.files as [NSURL] }
@@ -766,10 +836,25 @@ final class PinnedImageCanvas: NSView, NSDraggingSource {
             let items = writers.map { writer -> NSDraggingItem in
                 let item = NSDraggingItem(pasteboardWriter: writer); item.setDraggingFrame(bounds, contents: preview); return item
             }
+            guard !items.isEmpty else { return }
+            dragStart = nil; startingFrame = nil; startingCrop = nil; cropHandle = nil
+            rightStart = nil; rightSelection = nil
+            contentDragStarted = true
             beginDraggingSession(with: items, event: event, source: self)
         } catch { feedback(error.localizedDescription) }
     }
-    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        PrivacyLock.shared.locked || DragCancellationController.shared.isCancelled(cancellationToken) ? [] : .copy
+    }
+    func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
+        cancellationToken = DragCancellationController.shared.begin()
+    }
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        _ = DragCancellationController.shared.end(cancellationToken)
+        cancellationToken = nil
+        // Do not turn remaining left-drag events into a window move or crop adjustment.
+        dragStart = nil; startingFrame = nil; startingCrop = nil; cropHandle = nil
+    }
     func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { true }
 }
 

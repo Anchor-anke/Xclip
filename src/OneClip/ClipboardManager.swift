@@ -24,6 +24,7 @@ class ClipboardManager: ObservableObject {
     private var undoItems: [[ClipboardItem]] = []
     private var lastCapturedFingerprint: String?
     private var lastCapturedID: UUID?
+    private var loadedDataVersion: Int?
     private var temporaryPasteDirectories: [URL] = []
     private var temporaryImageDragDirectory: URL?
     private static let memoryArchiveType = "local.cclip.memory-attachments-v1"
@@ -189,15 +190,28 @@ class ClipboardManager: ObservableObject {
         guard captureAllowed() else { throw ClipboardError.accessDenied }
         let saved: ClipboardItem
         if settings.enableHistoryPersistence {
+            if let previous = loadedDataVersion, previous != (try store.dataVersion()) {
+                clipboardItems = try store.readItems()
+            }
             saved = try store.upsert(item)
             try store.setItemLimit(settings.maxItems)
-            let loaded = try store.readItems()
-            clipboardItems = loaded
+            let ids = try store.itemIDs()
+            var updated = clipboardItems.filter { ids.contains($0.id) && $0.id != saved.id }
+            let known = Set(updated.map(\.id)).union([saved.id])
+            for id in ids.subtracting(known) { if let item = try store.readItem(id: id) { updated.append(item) } }
+            if ids.contains(saved.id) { updated.insert(saved, at: 0) }
+            clipboardItems = updated
+            loadedDataVersion = try store.dataVersion()
         } else {
             saved = try memorySnapshot(item)
             var updated = clipboardItems.filter { $0.id != saved.id }
             updated.insert(saved, at: 0)
-            clipboardItems = limited(updated)
+            let retained = limited(updated)
+            let bytes = (retained + undoItems.flatMap { $0 }).reduce(0) { $0 + $1.residentPayloadBytes }
+            guard bytes <= 256 * 1024 * 1024 else {
+                throw ClipboardStorageError.unsupportedAttachment("仅内存历史已达 256 MiB，未记录本次内容；可释放历史或开启持久保存。", "Memory-only history reached 256 MiB. This capture was not saved; free history or enable persistence.")
+            }
+            clipboardItems = retained
         }
         lastError = nil
         changed()
@@ -223,7 +237,7 @@ class ClipboardManager: ObservableObject {
     }
     func reload() {
         guard settings.enableHistoryPersistence else { changed(); return }
-        do { clipboardItems = try store.readItems(); lastError = nil; changed() }
+        do { clipboardItems = try store.readItems(); loadedDataVersion = try store.dataVersion(); lastError = nil; changed() }
         catch { setError(error) } // Keep the last usable in-memory snapshot.
     }
     /// Called after a validated explicit backup import. Session-only mode remains session-only.
@@ -259,6 +273,7 @@ class ClipboardManager: ObservableObject {
         guard captureAllowed(), !items.isEmpty else { throw ClipboardError.accessDenied }
         let destination = requestedBoard ?? monitoringPasteboard
         if items.count == 1 { try writeToClipboard(items[0], board: destination); return }
+        let items = try items.map { try $0.materialized() }
         if items.allSatisfy({ $0.type == .text || ($0.type == .code && $0.filePath == nil && ($0.fileURLs ?? []).isEmpty) }) {
             try writeToClipboard(ClipboardItem(id: UUID(), content: items.map(\.content).joined(separator: separator), type: .text, timestamp: Date()), board: destination)
             return
@@ -292,11 +307,14 @@ class ClipboardManager: ObservableObject {
     func writeToClipboard(_ item: ClipboardItem, plainText: Bool = false, board requestedBoard: NSPasteboard? = nil) throws {
         guard captureAllowed() else { throw ClipboardError.accessDenied }
         let board = requestedBoard ?? monitoringPasteboard
+        let item = try item.materialized() // Validate before clearing or mutating any pasteboard.
         if let bytes = item.representations?[Self.memoryArchiveType] {
             let archive = try JSONDecoder().decode(HistoryArchive.self, from: bytes)
-            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cclip-paste-\(UUID().uuidString)")
+            let directory = SessionTemporaryFiles.root.appendingPathComponent("cclip-paste-\(UUID().uuidString)")
             do {
+                try FileManager.default.createDirectory(at: SessionTemporaryFiles.root, withIntermediateDirectories: true)
                 guard let materialized = try archive.unpack(to: directory).first else { throw ClipboardError.dataCorrupted }
+                try SessionTemporaryFiles.mark(directory)
                 try writeToClipboard(materialized, plainText: plainText, board: board)
                 temporaryPasteDirectories.append(directory)
                 return
@@ -342,8 +360,7 @@ class ClipboardManager: ObservableObject {
     /// images for this app session, just like materialized memory-only attachments.
     func imageDragFile(for png: Data) throws -> URL {
         if temporaryImageDragDirectory == nil {
-            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cclip-image-drag-\(UUID().uuidString)", isDirectory: true)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            let directory = try SessionTemporaryFiles.create(prefix: "cclip-image-drag-")
             temporaryPasteDirectories.append(directory)
             temporaryImageDragDirectory = directory
         }
@@ -383,7 +400,7 @@ class ClipboardManager: ObservableObject {
         do {
             if settings.enableHistoryPersistence {
                 try store.deleteItems(ids: removed.map(\.id))
-                clipboardItems = try store.readItems()
+                clipboardItems.removeAll(where: predicate)
             } else { clipboardItems.removeAll(where: predicate) }
             recordDeletion(removed)
             lastError = nil
@@ -410,9 +427,19 @@ class ClipboardManager: ObservableObject {
             if let error = store.lastError { lastError = error }
             return info
         }
-        let size = clipboardItems.reduce(Int64(0)) { $0 + Int64((try? JSONEncoder().encode($1).count) ?? 0) }
+        let size = clipboardItems.reduce(Int64(0)) { $0 + Int64($1.residentPayloadBytes) }
         return .init(itemCount: clipboardItems.count, totalSize: size, cachePath: AppLanguage.text("仅内存", "Memory only"))
     }
+    @discardableResult func maintainStorage(preserving items: [ClipboardItem] = []) -> ClipboardStore.MaintenanceResult? {
+        guard settings.enableHistoryPersistence else { return nil }
+        do {
+            let result = try store.maintainAttachments(preserving: items + undoItems.flatMap { $0 })
+            store.checkpointWhenIdle()
+            return result
+        } catch { setError(error); return nil }
+    }
+    var residentHistoryBytes: Int { clipboardItems.reduce(0) { $0 + $1.residentPayloadBytes } }
+    var residentUndoBytes: Int { undoItems.flatMap { $0 }.reduce(0) { $0 + $1.residentPayloadBytes } }
     func performManualCleanup() {
         if settings.enableHistoryPersistence {
             store.performRetentionCleanup()
@@ -428,6 +455,10 @@ class ClipboardManager: ObservableObject {
     }
     func searchItems(with query: String) -> [ClipboardItem] {
         let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return clipboardItems }
+        if settings.enableHistoryPersistence {
+            do { return try store.searchItems(query) } catch { setError(error); return [] }
+        }
         return clipboardItems.filter { item in
             let searchable = ([item.content, item.sourceApp ?? "", item.sourceAppName ?? ""] + item.tags).joined(separator: " ")
             return words.allSatisfy { searchable.localizedStandardContains($0) }
@@ -444,149 +475,26 @@ class ClipboardManager: ObservableObject {
         let archive = try HistoryArchive.make(items: [item])
         guard archive.files.reduce(0, { $0 + ($1.data?.count ?? 0) }) <= 64 * 1024 * 1024 else { throw ClipboardError.dataCorrupted }
         var result = item
+        result.content = try item.fullContent()
         result.filePath = nil; result.fileURLs = nil; result.data = nil
         result.representations = [Self.memoryArchiveType: try JSONEncoder().encode(archive)]
         return result
     }
     func createItemHash(_ item: ClipboardItem) -> String {
-        var data = Data((item.type.rawValue + item.content).utf8)
-        if let bytes = item.data { data.append(bytes) }
-        if let paths = item.fileURLs { data.append(Data(paths.joined(separator: "\n").utf8)) }
-        if let representations = item.representations {
-            for key in representations.keys.sorted() { data.append(Data(key.utf8)); data.append(representations[key]!) }
-        }
-        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        var hash = SHA256()
+        func add(_ string: String) { hash.update(data: Data(string.utf8)); hash.update(data: Data([0])) }
+        add(item.type.rawValue); add(item.contentDigest)
+        if let bytes = item.data { add(ClipboardBlobReference.digest(bytes)) }
+        else if item.type == .image, (item.fileURLs ?? []).isEmpty, let path = item.filePath,
+                let bytes = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe) { add(ClipboardBlobReference.digest(bytes)) }
+        if let paths = item.fileURLs { paths.forEach(add) }
+        let formats = item.representationDigests
+        for key in formats.keys.sorted() { add(key); add(formats[key]!) }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
     deinit {
         timer?.invalidate()
         if let languageObserver { NotificationCenter.default.removeObserver(languageObserver) }
         for directory in temporaryPasteDirectories { try? FileManager.default.removeItem(at: directory) }
-    }
-}
-
-class ImageCacheManager {
-    static let shared = ImageCacheManager()
-
-    // NSCache 是线程安全的，并且会在系统内存不足时自动释放对象
-    private let cache = NSCache<NSString, NSImage>()
-
-    private init() {
-        // 配置缓存限制，避免占用过多内存
-        cache.totalCostLimit = 50 * 1024 * 1024 // 50 MB
-        cache.countLimit = 100 // 最多100张图片
-    }
-
-    /// 将图片存入缓存
-    /// - Parameters:
-    ///   - image: 要缓存的 NSImage 对象
-    ///   - key: 唯一的缓存键 (通常是 item.id.uuidString)
-    func setImage(_ image: NSImage, forKey key: String) {
-        // 计算图片的近似内存占用
-        let cost = Int(image.size.width * image.size.height * 4) // 假设每个像素4字节
-        cache.setObject(image, forKey: key as NSString, cost: min(cost, 10 * 1024 * 1024)) // 单张图片不超过10MB
-    }
-
-    /// 从缓存中获取图片
-    /// - Parameter key: 唯一的缓存键
-    /// - Returns: 缓存的 NSImage 对象，如果不存在则返回 nil
-    func getImage(forKey key: String) -> NSImage? {
-        if let image = cache.object(forKey: key as NSString) {
-            return image
-        } else {
-            return nil
-        }
-    }
-
-    /// 从缓存中移除指定的图片
-    /// - Parameter key: 唯一的缓存键
-    func removeImage(forKey key: String) {
-        cache.removeObject(forKey: key as NSString)
-    }
-
-    /// 清空整个缓存
-    func clearCache() {
-        cache.removeAllObjects()
-    }
-}
-
-// MARK: - 图片加载队列管理器
-class ImageLoadingQueueManager: @unchecked Sendable {
-    static let shared = ImageLoadingQueueManager()
-    
-    private let maxConcurrentLoads = 3 // 最大同时加载数量
-    private let loadingQueue = DispatchQueue(label: "image.loading.queue", qos: .userInitiated, attributes: .concurrent)
-    private let semaphore: DispatchSemaphore
-    private var activeLoads = Set<String>()
-    private let activeLoadsLock = DispatchQueue(label: "activeLoads.lock", qos: .userInitiated, attributes: .concurrent)
-    
-    private init() {
-        self.semaphore = DispatchSemaphore(value: maxConcurrentLoads)
-    }
-    
-    /// 添加图片加载任务到队列
-    /// - Parameters:
-    ///   - itemId: 图片项目ID
-    ///   - priority: 加载优先级
-    ///   - loadTask: 加载任务闭包
-    func enqueueImageLoad(itemId: String, priority: TaskPriority = .userInitiated, loadTask: @escaping () async -> Void) {
-        // 检查是否已经在加载中
-        let isAlreadyLoading = activeLoadsLock.sync(flags: .barrier) {
-            let isLoading = activeLoads.contains(itemId)
-            if !isLoading {
-                activeLoads.insert(itemId)
-            }
-            return isLoading
-        }
-        
-        guard !isAlreadyLoading else {
-            return
-        }
-        
-        Task(priority: priority) {
-            // 使用合适的QoS等待信号量，避免优先级倒置
-            let qosClass: DispatchQoS.QoSClass = {
-                switch priority {
-                case .userInteractive:
-                    return .userInteractive
-                case .userInitiated:
-                    return .userInitiated
-                default:
-                    return .utility
-                }
-            }()
-            
-            // 等待信号量，使用匹配的QoS避免优先级倒置
-            await withCheckedContinuation { continuation in
-                DispatchQueue.global(qos: qosClass).async {
-                    self.semaphore.wait()
-                    continuation.resume()
-                }
-            }
-            
-            // 执行实际的加载任务
-            await loadTask()
-            
-            // 完成后释放资源，使用匹配的QoS
-            activeLoadsLock.async(qos: DispatchQoS(qosClass: qosClass, relativePriority: 0), flags: .barrier) { [self] in
-                activeLoads.remove(itemId)
-            }
-            
-            semaphore.signal()
-        }
-    }
-    
-    /// 取消指定图片的加载
-    /// - Parameter itemId: 图片项目ID
-    func cancelImageLoad(itemId: String) {
-        activeLoadsLock.async(qos: .userInitiated, flags: .barrier) { [self] in
-            activeLoads.remove(itemId)
-        }
-    }
-    
-    /// 获取当前活跃的加载数量
-    var activeLoadCount: Int {
-        return activeLoadsLock.sync {
-            return activeLoads.count
-        }
     }
 }

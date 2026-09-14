@@ -10,6 +10,7 @@ struct ShortcutSettingsTests {
 
     static func main() throws {
         localizedSettingsLabels()
+        try clearAndRestoreShortcuts()
         // WorkflowState is a fatal sentinel in this test executable. An unintended
         // register(actions: [:]) would reach it before any reply could be registered.
         let inactive = GlobalShortcuts.shared
@@ -54,6 +55,59 @@ struct ShortcutSettingsTests {
         let delete = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command], timestamp: 0, windowNumber: 0, context: nil, characters: "\u{7F}", charactersIgnoringModifiers: "\u{7F}", isARepeat: false, keyCode: 51)!
         require(ShortcutRecorder.spec(for: delete).label == "⌘⌫", "Recorder does not persist an invisible Delete character")
         print("All shortcut settings checks passed without registering global shortcuts.")
+    }
+
+    static func clearAndRestoreShortcuts() throws {
+        let capture = GlobalShortcuts.defaults["capture"]!
+        let custom = ShortcutSpec(keyCode: 17, modifiers: NSEvent.ModifierFlags([.control, .option]).rawValue, label: "⌃⌥T")
+        var document = WorkflowDocument()
+        require(GlobalShortcuts.effectiveShortcut(for: "capture", in: document) == capture, "An unconfigured screenshot action uses its default shortcut")
+        document.clearShortcut(for: "capture")
+        require(GlobalShortcuts.effectiveShortcut(for: "capture", in: document) == nil, "Clearing a default shortcut disables it instead of falling back to the default")
+        require(GlobalShortcuts.conflictDescription(for: capture, excluding: "history", in: document) == nil, "Clearing a default shortcut releases its combination for another action")
+
+        document.setShortcut(capture, for: "history")
+        require(GlobalShortcuts.conflictDescription(for: capture, excluding: "capture", in: document) != nil, "Restoring a cleared default detects when another action now uses its combination")
+        document.clearShortcut(for: "history")
+        require(document.shortcuts["history"] == nil && GlobalShortcuts.effectiveShortcut(for: "history", in: document) == nil, "Clearing a custom shortcut removes the override and also disables its original default")
+        require(GlobalShortcuts.conflictDescription(for: capture, excluding: "capture", in: document) == nil, "Clearing the custom binding makes the original shortcut available to restore")
+
+        document.setShortcut(custom, for: "pinClipboard")
+        require(GlobalShortcuts.effectiveShortcut(for: "pinClipboard", in: document) == custom, "An optional action can use a custom shortcut")
+        document.clearShortcut(for: "pinClipboard")
+        require(document.shortcuts["pinClipboard"] == nil && GlobalShortcuts.effectiveShortcut(for: "pinClipboard", in: document) == nil, "Clearing an optional action removes its shortcut")
+        require(GlobalShortcuts.conflictDescription(for: custom, excluding: "capture", in: document) == nil, "Clearing an optional shortcut releases its custom combination")
+
+        let serialized = try JSONEncoder().encode(document)
+        var reloaded = try JSONDecoder().decode(WorkflowDocument.self, from: serialized)
+        require(reloaded.disabledShortcuts == Set(["capture", "history", "pinClipboard"]), "Disabled shortcut choices survive workflow serialization")
+        for action in ["capture", "history", "pinClipboard"] {
+            require(GlobalShortcuts.effectiveShortcut(for: action, in: reloaded) == nil, "\(action) remains disabled after reloading the workflow")
+        }
+        reloaded.shortcuts["capture"] = custom
+        require(GlobalShortcuts.effectiveShortcut(for: "capture", in: reloaded) == nil, "An explicit disabled choice takes precedence over a stored shortcut override")
+        reloaded.setShortcut(custom, for: "capture")
+        require(!reloaded.disabledShortcuts.contains("capture") && GlobalShortcuts.effectiveShortcut(for: "capture", in: reloaded) == custom, "Recording a replacement shortcut re-enables a cleared action")
+        reloaded.resetShortcut(for: "capture")
+        require(reloaded.shortcuts["capture"] == nil && !reloaded.disabledShortcuts.contains("capture") && GlobalShortcuts.effectiveShortcut(for: "capture", in: reloaded) == capture, "Restoring a customized action removes its override and uses the default")
+        reloaded.resetShortcut(for: "history")
+        require(!reloaded.disabledShortcuts.contains("history") && GlobalShortcuts.effectiveShortcut(for: "history", in: reloaded) == GlobalShortcuts.defaults["history"], "Restoring a cleared action re-enables its default shortcut")
+        reloaded.resetShortcut(for: "pinClipboard")
+        require(!reloaded.disabledShortcuts.contains("pinClipboard") && GlobalShortcuts.effectiveShortcut(for: "pinClipboard", in: reloaded) == nil, "Restoring an optional action returns it to the unassigned default state")
+        reloaded.setShortcut(custom, for: "pinClipboard")
+        reloaded.resetShortcut(for: "pinClipboard")
+        require(reloaded.shortcuts["pinClipboard"] == nil && GlobalShortcuts.effectiveShortcut(for: "pinClipboard", in: reloaded) == nil, "Restoring a customized optional action removes its binding")
+
+        let legacy = try JSONDecoder().decode(WorkflowDocument.self, from: Data("{}".utf8))
+        require(legacy.disabledShortcuts.isEmpty, "Older workflows without disabled shortcuts decode with no disabled actions")
+        for (action, spec) in GlobalShortcuts.defaults {
+            require(GlobalShortcuts.effectiveShortcut(for: action, in: legacy) == spec, "Older workflows retain the default shortcut for \(action)")
+        }
+        let legacyCustomJSON = """
+        {"shortcuts":{"capture":{"keyCode":17,"modifiers":\(custom.modifiers),"label":"⌃⌥T"}}}
+        """
+        let legacyCustom = try JSONDecoder().decode(WorkflowDocument.self, from: Data(legacyCustomJSON.utf8))
+        require(GlobalShortcuts.effectiveShortcut(for: "capture", in: legacyCustom) == custom, "Older workflows retain custom shortcuts when the disabled field is absent")
     }
 
     static func localizedSettingsLabels() {

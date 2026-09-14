@@ -36,7 +36,7 @@ private enum QuickPasteFilter: String, CaseIterable {
 }
 
 func quickPasteURL(_ item: ClipboardItem) -> URL? {
-    guard item.type == .text else { return nil }
+    guard item.type == .text, item.contentReference == nil else { return nil }
     let text = item.content.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.contains(where: { $0.isWhitespace }), let url = URL(string: text),
           ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else { return nil }
@@ -82,6 +82,7 @@ struct QuickPasteView: View {
     @State private var selection: UUID?
     @State private var message: QuickPasteMessage?
     @State private var items: [ClipboardItem] = []
+    @State private var displayLimit = 100
     @State private var dragging = false
     @State private var contextMenuOpen = false
     @State private var editing = false
@@ -169,7 +170,7 @@ struct QuickPasteView: View {
                 } else {
                     ScrollView(.horizontal) {
                         LazyHStack(spacing: 14) {
-                            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                            ForEach(Array(items.prefix(displayLimit).enumerated()), id: \.element.id) { index, item in
                                 QuickPasteDragView(
                                     item: item,
                                     content: AnyView(QuickPasteCard(item: item, index: index, selected: selectedItem?.id == item.id).environment(\.colorScheme, colorScheme)),
@@ -177,12 +178,17 @@ struct QuickPasteView: View {
                                     onSelect: { selection = item.id; searchFocused = false; message = nil },
                                     onActivate: { paste(item) },
                                     onDragBegan: { dragging = true; onDragBegan() },
-                                    onDragEnded: { success in
+                                    onDragEnded: { result in
                                         dragging = false
-                                        if !success {
+                                        switch result {
+                                        case .cancelled:
+                                            message = .localized("已取消拖拽，未复制。", "Drag cancelled. Nothing was copied.")
+                                        case .notAccepted:
                                             message = .localized("未完成拖放，可重试或点击“复制”后粘贴。", "Drop not completed. Try again, or copy and paste instead.")
+                                        case .accepted:
+                                            message = nil
                                         }
-                                        onDragEnded(success)
+                                        onDragEnded(result == .accepted)
                                     },
                                     onContextAction: performContextAction,
                                     onContextMenuTrackingChanged: { active in contextMenuOpen = active; onContextMenuTrackingChanged(active) },
@@ -190,6 +196,7 @@ struct QuickPasteView: View {
                                 )
                                 .frame(width: 196, height: 226)
                                 .id(item.id)
+                                .onAppear { if index >= displayLimit - 10 { displayLimit = min(items.count, displayLimit + 100) } }
                             }
                         }.padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 7)
                             .background(QuickPasteWheelScroll(isEnabled: !dragging && !editing && !contextMenuOpen))
@@ -231,16 +238,25 @@ struct QuickPasteView: View {
     }
 
     private func refreshItems(_ source: [ClipboardItem]) {
-        let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
-        items = source.filter { item in
+        var matches = query.isEmpty ? source : clipboard.searchItems(with: query)
+        if !query.isEmpty {
+            let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
+            var ids = Set(matches.map(\.id))
+            // Legacy source identifiers can display a locally resolved application name.
+            for item in source where item.sourceAppName == nil && !ids.contains(item.id) {
+                let text = ([item.content, ClipboardSourceInfo.searchText(for: item)] + item.tags).joined(separator: " ")
+                if words.allSatisfy({ text.localizedStandardContains($0) }) { ids.insert(item.id) }
+            }
+            matches = source.filter { ids.contains($0.id) }
+        }
+        items = matches.filter { item in
             guard filter.includes(item) else { return false }
-            guard !words.isEmpty else { return true }
-            let searchable = ([item.content, ClipboardSourceInfo.searchText(for: item)] + item.tags).joined(separator: " ")
-            return words.allSatisfy { searchable.localizedStandardContains($0) }
+            return true
         }
         if selection == nil || !items.contains(where: { $0.id == selection }) { selection = items.first?.id }
     }
     private func resetSelection() {
+        displayLimit = 100
         refreshItems(clipboard.clipboardItems)
         selection = items.first?.id; message = nil
     }
@@ -381,10 +397,8 @@ private struct QuickPasteCard: View {
         .accessibilityHidden(true)
     }
     @ViewBuilder private var preview: some View {
-        if item.type == .image, let image = imageForClip(item) {
-            GeometryReader { geometry in
-                Image(nsImage: image).resizable().scaledToFill().frame(width: geometry.size.width, height: geometry.size.height).clipped()
-            }
+        if item.type == .image {
+            ClipboardThumbnail(item: item, fill: true)
         } else if let url {
             VStack(alignment: .leading, spacing: 10) {
                 Image(systemName: "link.circle.fill").font(.system(size: 33)).foregroundStyle(tint)
@@ -393,7 +407,7 @@ private struct QuickPasteCard: View {
                 Spacer(minLength: 0)
             }.padding(13).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else if item.type == .text || (item.type == .code && item.filePath == nil) {
-            Text(String(item.content.prefix(1400)))
+            Text(String(item.displayContent.prefix(1400)))
                 .font(.system(size: 13, design: item.type == .code ? .monospaced : .default))
                 .lineSpacing(3).lineLimit(7)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(13)
@@ -410,7 +424,7 @@ private struct QuickPasteCard: View {
         }
     }
     private var metadata: String {
-        if item.type == .text || item.type == .code { return "\(item.content.count) " + L("个字符", "characters") }
+        if item.type == .text || item.type == .code { return "\(item.contentCharacterCount ?? item.previewContent.count) " + L("个字符", "characters") }
         if let files = item.fileURLs, files.count > 1 { return "\(files.count) " + L("个文件", "files") }
         return kind
     }

@@ -68,6 +68,11 @@
 		A657ABA31E3E87F20D919D4B /* CaptureRecognitionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A627E0001E965A609B19678E /* CaptureRecognitionService.swift */; };
 		D7889FB3CE1C4C4E98B6EF29 /* CaptureRedaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F541438C2A6595BFA2A9264 /* CaptureRedaction.swift */; };
 		F11A0256C882707AC61D091E /* CaptureSelectionOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C072A46FC7A591B286B40F /* CaptureSelectionOptions.swift */; };
+		E3EDD2D6EF242327187704B1 /* DragCancellation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FD266A1B65772D1F792BEFE /* DragCancellation.swift */; };
+		75FA24ED25CF4055070CCECA /* DragSystemEventObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = F139CADB6B855C0086316F17 /* DragSystemEventObserver.swift */; };
+		75525622C99AF2FB299579BD /* ClipboardThumbnail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5873E7A09378BAD8343F1FF6 /* ClipboardThumbnail.swift */; };
+		159DB571655B736798FCF062 /* MemoryOptimizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAEC82DA4AEBC97E42890678 /* MemoryOptimizationTests.swift */; };
+		762119C1DA5C79E4CF0F3BC2 /* SessionTemporaryFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CDED6E7780BD0A06C961F3E /* SessionTemporaryFiles.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -135,6 +140,11 @@
 		A627E0001E965A609B19678E /* CaptureRecognitionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureRecognitionService.swift; sourceTree = "<group>"; };
 		7F541438C2A6595BFA2A9264 /* CaptureRedaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureRedaction.swift; sourceTree = "<group>"; };
 		A2C072A46FC7A591B286B40F /* CaptureSelectionOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureSelectionOptions.swift; sourceTree = "<group>"; };
+		5FD266A1B65772D1F792BEFE /* DragCancellation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragCancellation.swift; sourceTree = "<group>"; };
+		F139CADB6B855C0086316F17 /* DragSystemEventObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragSystemEventObserver.swift; sourceTree = "<group>"; };
+		5873E7A09378BAD8343F1FF6 /* ClipboardThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardThumbnail.swift; sourceTree = "<group>"; };
+		BAEC82DA4AEBC97E42890678 /* MemoryOptimizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryOptimizationTests.swift; sourceTree = "<group>"; };
+		4CDED6E7780BD0A06C961F3E /* SessionTemporaryFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTemporaryFiles.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -168,6 +178,11 @@
 			isa = PBXGroup;
 			children = (
 				AA00000029A8B4B700123456 /* OneClipApp.swift */,
+				4CDED6E7780BD0A06C961F3E /* SessionTemporaryFiles.swift */,
+				BAEC82DA4AEBC97E42890678 /* MemoryOptimizationTests.swift */,
+				5873E7A09378BAD8343F1FF6 /* ClipboardThumbnail.swift */,
+				F139CADB6B855C0086316F17 /* DragSystemEventObserver.swift */,
+				5FD266A1B65772D1F792BEFE /* DragCancellation.swift */,
 				A2C072A46FC7A591B286B40F /* CaptureSelectionOptions.swift */,
 				7F541438C2A6595BFA2A9264 /* CaptureRedaction.swift */,
 				A627E0001E965A609B19678E /* CaptureRecognitionService.swift */,
@@ -330,6 +345,11 @@
 				AA00004129A8B5000123456 /* NotificationManager.swift in Sources */,
 				AA00004929A8B5000123456 /* FavoriteManager.swift in Sources */,
 				AA00000129A8B4B700123456 /* OneClipApp.swift in Sources */,
+				762119C1DA5C79E4CF0F3BC2 /* SessionTemporaryFiles.swift in Sources */,
+				159DB571655B736798FCF062 /* MemoryOptimizationTests.swift in Sources */,
+				75525622C99AF2FB299579BD /* ClipboardThumbnail.swift in Sources */,
+				75FA24ED25CF4055070CCECA /* DragSystemEventObserver.swift in Sources */,
+				E3EDD2D6EF242327187704B1 /* DragCancellation.swift in Sources */,
 				F11A0256C882707AC61D091E /* CaptureSelectionOptions.swift in Sources */,
 				D7889FB3CE1C4C4E98B6EF29 /* CaptureRedaction.swift in Sources */,
 				A657ABA31E3E87F20D919D4B /* CaptureRecognitionService.swift in Sources */,
@@ -509,7 +529,7 @@
 				CODE_SIGN_ENTITLEMENTS = OneClip/OneClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_ASSET_PATHS = "\"OneClip/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -519,7 +539,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.4.0;
+				MARKETING_VERSION = 0.4.1;
 				PRODUCT_BUNDLE_IDENTIFIER = local.cclip.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -535,7 +555,7 @@
 				CODE_SIGN_ENTITLEMENTS = OneClip/OneClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_ASSET_PATHS = "\"OneClip/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -545,7 +565,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.4.0;
+				MARKETING_VERSION = 0.4.1;
 				PRODUCT_BUNDLE_IDENTIFIER = local.cclip.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

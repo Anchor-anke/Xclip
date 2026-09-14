@@ -19,7 +19,7 @@ cat > "$TEST_APP/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path "$REPO_DIR/.build/ModuleCache" \
-  src/OneClip/AppLanguage.swift src/OneClip/CaptureTools.swift src/OneClip/ImageEditorView.swift \
+  src/OneClip/AppLanguage.swift src/OneClip/CaptureTools.swift src/OneClip/ImageEditorView.swift src/OneClip/SessionTemporaryFiles.swift \
   src/OneClip/CaptureAnnotation.swift src/OneClip/CaptureAnnotationOverlay.swift src/OneClip/CaptureAnnotationOptions.swift src/OneClip/CaptureRecognitionService.swift src/OneClip/CaptureRedaction.swift src/OneClip/CaptureSelectionOptions.swift src/OneClip/CaptureOutput.swift \
   tests/CaptureAnnotationInteractionTests.swift -o "$TEST_APP/Contents/MacOS/CaptureInteractionTests"
 codesign --force --sign - "$TEST_APP"

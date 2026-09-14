@@ -116,13 +116,18 @@ class GlobalShortcuts: ObservableObject {
         }
     }
 
+    static func effectiveShortcut(for action: String, in document: WorkflowDocument) -> ShortcutSpec? {
+        guard !document.disabledShortcuts.contains(action) else { return nil }
+        return document.shortcuts[action] ?? defaults[action]
+    }
+
     static func conflictDescription(for spec: ShortcutSpec, excluding action: String, in document: WorkflowDocument) -> String? {
         let supported: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
         func matches(_ other: ShortcutSpec) -> Bool {
             spec.keyCode == other.keyCode && spec.flags.intersection(supported) == other.flags.intersection(supported)
         }
         for name in Set(allActions + Array(document.shortcuts.keys)).sorted() where name != action {
-            if let other = document.shortcuts[name] ?? defaults[name], matches(other) {
+            if let other = effectiveShortcut(for: name, in: document), matches(other) {
                 return L("此快捷键已用于“\(title(for: name))”，请使用其他组合。", "This shortcut is used by “\(title(for: name))”. Choose another combination.")
             }
         }
@@ -177,7 +182,7 @@ class GlobalShortcuts: ObservableObject {
             index += 1
         }
         for name in actions.keys.sorted() {
-            if let spec = WorkflowState.shared.document.shortcuts[name] ?? Self.defaults[name], let action = actions[name] { add(spec, name: name, isAppAction: true, action: action) }
+            if let spec = Self.effectiveShortcut(for: name, in: WorkflowState.shared.document), let action = actions[name] { add(spec, name: name, isAppAction: true, action: action) }
         }
         for reply in WorkflowState.shared.document.replies {
             let replyID = reply.id

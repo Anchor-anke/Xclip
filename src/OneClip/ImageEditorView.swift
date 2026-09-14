@@ -693,19 +693,65 @@ enum ImageEditingOperations {
 }
 
 @MainActor
+private final class EditorCheckpoint {
+    private(set) var image: CGImage?
+    private var file: URL?
+    init(_ image: CGImage) { self.image = image }
+    var bytes: Int { image.map { $0.bytesPerRow * $0.height } ?? 0 }
+    func read() throws -> CGImage {
+        if let image { return image }
+        guard let file else { throw CaptureToolError.invalidImage }
+        // Loaded checkpoints are owned by the current model, not cached indefinitely here.
+        return try CaptureImageCodec.decode(Data(contentsOf: file, options: .mappedIfSafe))
+    }
+    func spill() throws {
+        guard let image else { return }
+        if file == nil {
+            let directory = try SessionTemporaryFiles.create(prefix: "xclip-edit-")
+            let target = directory.appendingPathComponent("checkpoint.png")
+            do { try CaptureImageCodec.png(image).write(to: target, options: .atomic); file = target }
+            catch { try? FileManager.default.removeItem(at: directory); throw error }
+        }
+        self.image = nil
+    }
+    deinit { if let file { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) } }
+}
+
+@MainActor
 final class ImageEditorModel: ObservableObject {
     @Published private(set) var image: CGImage?
     @Published var failure: Error?
     var errorMessage: String? { failure?.localizedDescription }
     @Published private(set) var undoCount = 0
     @Published private(set) var redoCount = 0
-    private var undoImages: [CGImage] = []
-    private var redoImages: [CGImage] = []
+    private struct Frame { let image: EditorCheckpoint; let source: EditorCheckpoint }
+    private var undoFrames: [Frame] = [], redoFrames: [Frame] = []
     private var immutableSource: CGImage?
-    private var undoSources: [CGImage] = []
-    private var redoSources: [CGImage] = []
-    init(data: Data) {
+    private let allowsDiskHistory: () -> Bool
+    let historyBudget: Int
+    init(data: Data, allowsDiskHistory: Bool = false, historyBudget: Int = 128 * 1024 * 1024, diskPermission: (() -> Bool)? = nil) {
+        self.allowsDiskHistory = diskPermission ?? { allowsDiskHistory }; self.historyBudget = max(0, historyBudget)
         do { image = try CaptureImageCodec.decode(data); immutableSource = image } catch { failure = error }
+    }
+    private func checkpoint(_ image: CGImage) -> EditorCheckpoint {
+        for frame in undoFrames + redoFrames {
+            if frame.image.image === image { return frame.image }
+            if frame.source.image === image { return frame.source }
+        }
+        return EditorCheckpoint(image)
+    }
+    private func currentFrame() -> Frame? {
+        guard let image, let immutableSource else { return nil }
+        let value = checkpoint(image)
+        return Frame(image: value, source: image === immutableSource ? value : checkpoint(immutableSource))
+    }
+    var historyResidentBytes: Int {
+        var seen = Set<ObjectIdentifier>()
+        return (undoFrames + redoFrames).flatMap { [$0.image, $0.source] }.reduce(0) { sum, checkpoint in
+            guard let candidate = checkpoint.image, candidate !== image, candidate !== immutableSource,
+                  seen.insert(ObjectIdentifier(candidate)).inserted else { return sum }
+            return sum + checkpoint.bytes
+        }
     }
     func edit(_ stroke: ImageEditStroke) {
         guard let image else { return }
@@ -716,36 +762,55 @@ final class ImageEditorModel: ObservableObject {
             let result = try ImageEditingOperations.apply(stroke, to: image, source: immutableSource)
             let source = stroke.tool == .crop ? try immutableSource.map { try ImageEditingOperations.apply(stroke, to: $0) } : immutableSource
             commit(result, source: source)
-        }
-        catch { failure = error }
+        } catch { failure = error }
     }
     func clear() {
-        image = nil; immutableSource = nil; undoImages.removeAll(); redoImages.removeAll(); undoSources.removeAll(); redoSources.removeAll(); failure = nil; updateCounts()
+        image = nil; immutableSource = nil; undoFrames.removeAll(); redoFrames.removeAll(); failure = nil; updateCounts()
     }
     func rotate() {
         guard let image else { return }
         do { commit(try CaptureImageCodec.rotateClockwise(image), source: try immutableSource.map(CaptureImageCodec.rotateClockwise)) } catch { failure = error }
     }
     private func commit(_ result: CGImage, source: CGImage?) {
-        if let image, let immutableSource { undoImages.append(image); undoSources.append(immutableSource) }
-        var pixels = undoImages.reduce(0) { $0 + $1.width * $1.height }
-        while undoImages.count > 20 || (pixels > 100_000_000 && undoImages.count > 1) {
-            let first = undoImages.removeFirst(); undoSources.removeFirst(); pixels -= first.width * first.height
+        if let frame = currentFrame() { undoFrames.append(frame) }
+        redoFrames.removeAll(); immutableSource = source; image = result; failure = nil
+        trimHistory(); updateCounts()
+    }
+    private func trimHistory() {
+        while undoFrames.count > 20 { undoFrames.removeFirst() }
+        if allowsDiskHistory() {
+            do {
+                for checkpoint in (undoFrames + redoFrames).flatMap({ [$0.image, $0.source] }) where historyResidentBytes > historyBudget {
+                    if checkpoint.image !== image && checkpoint.image !== immutableSource { try checkpoint.spill() }
+                }
+            } catch { failure = error }
         }
-        redoImages.removeAll(); redoSources.removeAll()
-        immutableSource = source; image = result; failure = nil; updateCounts()
+        // No disk writes in memory-only mode, including on a spill failure.
+        while historyResidentBytes > historyBudget {
+            if !undoFrames.isEmpty { undoFrames.removeFirst() }
+            else if !redoFrames.isEmpty { redoFrames.removeFirst() }
+            else { break }
+        }
     }
     func undo() {
-        guard let previous = undoImages.popLast(), let source = undoSources.popLast() else { return }
-        if let image, let immutableSource { redoImages.append(image); redoSources.append(immutableSource) }
-        immutableSource = source; image = previous; updateCounts()
+        guard let previous = undoFrames.last else { return }
+        do {
+            let restored = try previous.image.read(), source = try previous.source === previous.image ? restored : previous.source.read()
+            if let current = currentFrame() { redoFrames.append(current) }
+            undoFrames.removeLast(); image = restored; immutableSource = source; failure = nil
+            trimHistory(); updateCounts()
+        } catch { failure = error }
     }
     func redo() {
-        guard let next = redoImages.popLast(), let source = redoSources.popLast() else { return }
-        if let image, let immutableSource { undoImages.append(image); undoSources.append(immutableSource) }
-        immutableSource = source; image = next; updateCounts()
+        guard let next = redoFrames.last else { return }
+        do {
+            let restored = try next.image.read(), source = try next.source === next.image ? restored : next.source.read()
+            if let current = currentFrame() { undoFrames.append(current) }
+            redoFrames.removeLast(); image = restored; immutableSource = source; failure = nil
+            trimHistory(); updateCounts()
+        } catch { failure = error }
     }
-    private func updateCounts() { undoCount = undoImages.count; redoCount = redoImages.count }
+    private func updateCounts() { undoCount = undoFrames.count; redoCount = redoFrames.count }
     func export() throws -> Data {
         guard let image else { throw CaptureToolError.invalidImage }
         return try CaptureImageCodec.png(image)
@@ -763,8 +828,8 @@ struct ImageEditorView: View {
     @State private var textSize = 24.0
     @State private var nextNumber = 1
     private let onExport: (Data) -> Void
-    init(imageData: Data, onExport: @escaping (Data) -> Void) {
-        _model = StateObject(wrappedValue: ImageEditorModel(data: imageData))
+    init(imageData: Data, allowsDiskHistory: @escaping () -> Bool = { false }, onExport: @escaping (Data) -> Void) {
+        _model = StateObject(wrappedValue: ImageEditorModel(data: imageData, diskPermission: allowsDiskHistory))
         self.onExport = onExport
         let preferences = ImageEditorPreferences.load()
         _tool = State(initialValue: preferences.tool)

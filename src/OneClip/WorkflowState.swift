@@ -60,6 +60,8 @@ struct WorkflowDocument: Codable {
     var replies: [QuickReply] = []
     var categories: [ClipCategory] = []
     var shortcuts: [String: ShortcutSpec] = [:]
+    // Missing overrides use defaults; an explicit clear must survive that fallback.
+    var disabledShortcuts: Set<String> = []
     var language = "zh"
     var layout = "list"
     var excludedApps = ""
@@ -75,8 +77,20 @@ struct WorkflowDocument: Codable {
     var returnAfterPaste = false
 
     init() {}
+    mutating func setShortcut(_ spec: ShortcutSpec, for action: String) {
+        disabledShortcuts.remove(action)
+        shortcuts[action] = spec
+    }
+    mutating func clearShortcut(for action: String) {
+        shortcuts.removeValue(forKey: action)
+        disabledShortcuts.insert(action)
+    }
+    mutating func resetShortcut(for action: String) {
+        disabledShortcuts.remove(action)
+        shortcuts.removeValue(forKey: action)
+    }
     enum CodingKeys: String, CodingKey {
-        case stack, shelf, replies, categories, shortcuts, language, layout, excludedApps, excludedPatterns
+        case stack, shelf, replies, categories, shortcuts, disabledShortcuts, language, layout, excludedApps, excludedPatterns
         case searchHistory, selectionMenu, finderCut, edgeReveal, topShelf, automaticBackup, autoRecognizeImages
         case moveAfterPaste, returnAfterPaste
     }
@@ -87,6 +101,7 @@ struct WorkflowDocument: Codable {
         replies = try values.decodeIfPresent([QuickReply].self, forKey: .replies) ?? []
         categories = try values.decodeIfPresent([ClipCategory].self, forKey: .categories) ?? []
         shortcuts = try values.decodeIfPresent([String: ShortcutSpec].self, forKey: .shortcuts) ?? [:]
+        disabledShortcuts = try values.decodeIfPresent(Set<String>.self, forKey: .disabledShortcuts) ?? []
         language = try values.decodeIfPresent(String.self, forKey: .language) ?? "zh"
         layout = try values.decodeIfPresent(String.self, forKey: .layout) ?? "list"
         excludedApps = try values.decodeIfPresent(String.self, forKey: .excludedApps) ?? ""
@@ -192,10 +207,7 @@ class WorkflowState: ObservableObject {
     }
     func addToStack(_ item: ClipboardItem) {
         // Every stack occurrence has its own identity, even when the same clip is queued twice.
-        document.stack.append(ClipboardItem(id: UUID(), content: item.content, type: item.type,
-            timestamp: item.timestamp, data: item.data, filePath: item.filePath,
-            isFavorite: item.isFavorite, isPinned: item.isPinned, sourceApp: item.sourceApp, sourceAppName: item.sourceAppName,
-            tags: item.tags, representations: item.representations, fileURLs: item.fileURLs))
+        document.stack.append(item.withNewIdentity())
     }
     func splitLines(_ text: String) {
         for line in text.components(separatedBy: .newlines) where !line.isEmpty {
@@ -218,12 +230,11 @@ class WorkflowState: ObservableObject {
         return result
     }
     func exportReplies(to url: URL) throws {
-        var archive = try HistoryArchive.make(items: [], additionalItems: document.replies.map(\.item))
-        let snapshots = archive.additionalItems ?? []
-        var replies = document.replies
-        for index in replies.indices { replies[index].item = snapshots[index] }
-        archive.extraFiles = ["replies.json": try JSONEncoder().encode(replies)]
-        try JSONEncoder().encode(archive).write(to: url, options: .atomic)
+        try HistoryArchive.write(items: [], additionalItems: document.replies.map(\.item), to: url) { snapshots in
+            var replies = document.replies
+            for index in replies.indices { replies[index].item = snapshots[index] }
+            return ["replies.json": try JSONEncoder().encode(replies)]
+        }
     }
     func importReplies(from url: URL, using destinationStore: ClipboardStore? = nil) throws {
         try requireWritableStorage()

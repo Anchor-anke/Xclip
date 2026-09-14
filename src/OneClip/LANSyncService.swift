@@ -164,7 +164,7 @@ final class LANSyncService: ObservableObject {
     func publish(item: ClipboardItem) throws {
         guard isRunning else { throw AutomationError.invalid("请先在局域网共享中开启服务。", "Enable LAN sharing first.") }
         guard ClipboardManager.shared.captureAllowed() else { throw AutomationError.invalid("历史已锁定。", "History is locked.") }
-        var content = LANSharedContent(kind: "text", text: item.content, attachments: [])
+        var content = LANSharedContent(kind: "text", text: try item.fullContent(), attachments: [])
         let paths = item.fileURLs ?? item.filePath.map { [$0] } ?? []
         if !paths.isEmpty {
             guard paths.count <= 16 else { throw AutomationError.invalid("每次最多共享 16 个文件。", "Share at most 16 files at a time.") }

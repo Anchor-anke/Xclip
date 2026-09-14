@@ -116,6 +116,10 @@ struct PreferencesView: View {
                 Text(L("收藏和置顶不会自动清理。", "Favorites and pinned items are protected from automatic cleanup.")).font(.caption)
                 Text("\(storageInfo.itemCount) " + L("条 · ", "items · ") + storageInfo.totalSize.formatted(.byteCount(style: .file).locale(appLanguage.locale)))
                 Text(storageInfo.cachePath).font(.caption).textSelection(.enabled)
+                Button(L("释放图片预览内存", "Release image preview memory")) {
+                    ClipboardThumbnailCache.shared.clear()
+                    state.status = L("已释放图片预览缓存，历史和原图仍保留。", "Image preview cache released. History and originals are preserved.")
+                }
                 HStack { Button(L("更改历史存储位置…", "Change history location…")) { WorkspaceBackup.shared.relocate(); refreshStorage() }; Button(L("执行过期清理", "Clean expired items")) { ClipboardManager.shared.performManualCleanup(); refreshStorage() } }
             }
             Section(L("备份与恢复", "Backup & restore")) {
@@ -163,7 +167,7 @@ struct PreferencesView: View {
                             }
                         }
                         Spacer()
-                        Text((state.document.shortcuts[name] ?? GlobalShortcuts.defaults[name])?.label ?? L("未设置", "Not set"))
+                        Text(GlobalShortcuts.effectiveShortcut(for: name, in: state.document)?.label ?? (state.document.disabledShortcuts.contains(name) ? L("已清除", "Cleared") : L("未设置", "Not set")))
                             .font(.system(.body, design: .monospaced))
                             .accessibilityIdentifier("settings.shortcut.\(name).binding")
                         Button(L("修改…", "Change…")) {
@@ -171,22 +175,30 @@ struct PreferencesView: View {
                             ShortcutRecorder.shared.record(validate: { spec in
                                 GlobalShortcuts.conflictDescription(for: spec, excluding: name, in: state.document)
                             }) { spec in
-                                state.document.shortcuts[name] = spec
+                                state.document.setShortcut(spec, for: name)
                                 NotificationCenter.default.post(name: .init("CClipShortcutsChanged"), object: nil)
                             }
                         }.accessibilityIdentifier("settings.shortcut.\(name).change")
+                        Button(L("清除", "Clear")) {
+                            shortcutError = nil
+                            state.document.clearShortcut(for: name)
+                            NotificationCenter.default.post(name: .init("CClipShortcutsChanged"), object: nil)
+                        }
+                        .disabled(GlobalShortcuts.effectiveShortcut(for: name, in: state.document) == nil)
+                        .accessibilityLabel(L("清除\(shortcutTitle(name))快捷键", "Clear \(shortcutTitle(name)) shortcut"))
+                        .accessibilityIdentifier("settings.shortcut.\(name).clear")
                         Button(L("恢复", "Reset")) {
                             if let spec = GlobalShortcuts.defaults[name], let error = GlobalShortcuts.conflictDescription(for: spec, excluding: name, in: state.document) {
                                 shortcutError = error
                                 return
                             }
                             shortcutError = nil
-                            state.document.shortcuts.removeValue(forKey: name)
+                            state.document.resetShortcut(for: name)
                             NotificationCenter.default.post(name: .init("CClipShortcutsChanged"), object: nil)
                         }.accessibilityIdentifier("settings.shortcut.\(name).reset")
                     }
                 }
-                Text(L("修改后立即生效并自动保存；“恢复”使用默认组合，没有默认组合的操作会清除绑定。", "Changes apply immediately and are saved automatically. Reset restores the default combination, or clears the binding when no default exists."))
+                Text(L("修改后立即生效并自动保存。“清除”停用该快捷键，重启后仍保持停用；“修改”可重新设置，“恢复”使用默认组合，没有默认组合的操作会回到未设置。", "Changes apply immediately and are saved automatically. Clear disables the shortcut, including after restarting. Change sets a new shortcut; Reset restores the default, or leaves it unassigned when no default exists."))
                     .font(.caption).foregroundStyle(.secondary)
                 if let shortcutError { Text(shortcutError).foregroundStyle(.red) }
                 ForEach(shortcuts.errors, id: \.self) { Text($0).foregroundStyle(.red) }
@@ -337,16 +349,15 @@ class WorkspaceBackup {
         guard !forbidden.contains(url.lastPathComponent),
               !canonical.hasPrefix(URL(fileURLWithPath: history).resolvingSymlinksInPath().path + "/attachments/") else { throw ClipboardError.storageFailure }
         let historyItems = settings.enableHistoryPersistence || persistentHistoryOnly ? try clipboard.store.readItems() : clipboard.clipboardItems
-        var archive = try HistoryArchive.make(items: historyItems, additionalItems: additional)
-        let portableDocument = try remap(workflow.document, to: archive.additionalItems ?? [])
-        archive.extraFiles = [
-            "workflow.json": try JSONEncoder().encode(portableDocument),
-            "settings.json": try JSONEncoder().encode(snapshotSettings()),
-            "scripts.json": try JSONEncoder().encode(scripts.scripts),
-            "ai-configuration.json": try JSONEncoder().encode(ai.configuration)
-        ]
-        try archive.validate()
-        try JSONEncoder().encode(archive).write(to: url, options: .atomic)
+        try HistoryArchive.write(items: historyItems, additionalItems: additional, to: url) { snapshots in
+            let portableDocument = try remap(workflow.document, to: snapshots)
+            return [
+                "workflow.json": try JSONEncoder().encode(portableDocument),
+                "settings.json": try JSONEncoder().encode(snapshotSettings()),
+                "scripts.json": try JSONEncoder().encode(scripts.scripts),
+                "ai-configuration.json": try JSONEncoder().encode(ai.configuration)
+            ]
+        }
     }
 
     func restore(from url: URL) throws {
