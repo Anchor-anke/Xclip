@@ -110,7 +110,10 @@ struct HistoryView: View {
                 && (recentDays == 0 || item.timestamp >= Date().addingTimeInterval(-Double(recentDays * 86400)))
         }
     }
-    private var selectedItems: [ClipboardItem] { items.filter { selected.contains($0.id) } }
+    private var selection: HistorySelection { HistorySelection(ids: selected, visibleItems: items) }
+    private var selectedItems: [ClipboardItem] { selection.items }
+    private var actions: HistoryActions { HistoryActions(clipboard: clipboard, workflow: workflow) }
+    private var hasFilters: Bool { !clipboard.searchText.isEmpty || type != "all" || !source.isEmpty || tag != "all" || recentDays != 0 }
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -119,26 +122,55 @@ struct HistoryView: View {
                     .textFieldStyle(.plain).focused($searchFocused)
                     .onSubmit { workflow.rememberSearch(clipboard.searchText) }
                 if !clipboard.searchText.isEmpty { Button { clipboard.searchText = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).help(L("清除搜索", "Clear search")) }
-                Menu { ForEach(workflow.document.searchHistory, id: \.self) { query in Button(query) { clipboard.searchText = query } } } label: { Image(systemName: "clock.arrow.circlepath") }.help(L("搜索历史", "Recent searches"))
+                Menu {
+                    if workflow.document.searchHistory.isEmpty {
+                        Text(L("暂无搜索历史，搜索后按回车保存", "No recent searches. Press Return after searching to save one."))
+                    } else {
+                        ForEach(workflow.document.searchHistory, id: \.self) { query in Button(query) { clipboard.searchText = query } }
+                    }
+                } label: { Image(systemName: "clock.arrow.circlepath") }
+                    .help(L("搜索历史", "Recent searches"))
+                    .accessibilityLabel(L("搜索历史", "Recent searches"))
+                    .accessibilityIdentifier("history.recentSearches")
             }.padding(14).background(.bar)
             filters
             if items.isEmpty {
                 VStack(spacing: 14) {
                     Image(systemName: "doc.on.clipboard").font(.system(size: 44)).foregroundStyle(.secondary)
-                    Text(L("这里会保存你复制的内容", "Your copied content will appear here")).font(.title3)
-                    Text(L("支持文本、图片和文件。可搜索、收藏，或按顺序加入栈。", "Text, images and files. Search, save favorites, or add items to a stack.")).foregroundStyle(.secondary)
-                    if !clipboard.isMonitoring { Button(L("开始记录", "Start recording")) { clipboard.startMonitoring() } }
+                    Text(hasFilters ? L("没有匹配的内容", "No matching items") : favoritesOnly ? L("暂无收藏", "No favorites yet") : L("这里会保存你复制的内容", "Your copied content will appear here")).font(.title3)
+                    if hasFilters {
+                        Button(L("清除搜索与筛选", "Clear search and filters")) { resetFilters() }
+                            .accessibilityIdentifier("history.resetFilters")
+                    } else {
+                        Text(favoritesOnly ? L("在历史记录上点击右键，选择收藏。", "Right-click a history item and choose Favorite.") : L("支持文本、图片和文件。可搜索、收藏，或按顺序加入栈。", "Text, images and files. Search, save favorites, or add items to a stack.")).foregroundStyle(.secondary)
+                        if !favoritesOnly && !clipboard.isMonitoring { Button(L("开始记录", "Start recording")) { toggleMonitoring() } }
+                    }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if workflow.document.layout == "list" {
                 List(selection: $selected) {
                     ForEach(Array(items.prefix(displayLimit))) { item in
-                        HistoryRow(item: item, query: clipboard.searchText).tag(item.id)
+                        HistoryRow(item: item, query: clipboard.searchText).contentShape(Rectangle()).tag(item.id)
                             .onAppear { revealMore(after: item) }
-                            .contextMenu { itemMenu(item) }
-                            .onDrag { dragProvider(item) }
-                            .onTapGesture(count: 2) { PasteCoordinator.shared.paste(item) }
+                            .nativeClipboardDrag(item)
                     }
                 }.listStyle(.inset)
+                    // Let the selectable List own both single and double clicks.
+                    // Row-level tap recognizers prevent native mouse selection.
+                    .contextMenu(forSelectionType: UUID.self) { ids in
+                        let targets = HistorySelection(ids: ids, visibleItems: items).items
+                        if targets.count == 1, let item = targets.first {
+                            itemMenu(item)
+                        } else if !targets.isEmpty {
+                            Button(L("复制选中项", "Copy selection")) { actions.copy(targets) }
+                            Button(L("加入栈", "Add to stack")) { actions.addToStack(targets) }
+                            Button(L("收藏选中项", "Favorite selection")) { targets.forEach { FavoriteManager.shared.addToFavorites($0) } }
+                            Button(L("删除选中", "Delete selection"), role: .destructive) { clipboard.deleteItems(targets) }
+                        }
+                    } primaryAction: { ids in
+                        guard NSEvent.modifierFlags.intersection([.command, .control, .shift]).isEmpty else { return }
+                        let target = HistorySelection(ids: ids, visibleItems: items)
+                        if target.canPaste, let item = target.items.first { paste(item) }
+                    }
             } else {
                 ScrollView(workflow.document.layout == "horizontal" ? .horizontal : .vertical) {
                     if workflow.document.layout == "horizontal" {
@@ -151,12 +183,18 @@ struct HistoryView: View {
             Divider()
             HStack {
                 Text("\(items.count) " + L("条", "items")).foregroundStyle(.secondary)
-                if !selected.isEmpty { Text("· \(selected.count) " + L("已选", "selected")).foregroundStyle(.secondary) }
+                if !selection.isEmpty { Text("· \(selectedItems.count) " + L("已选", "selected")).foregroundStyle(.secondary) }
                 Spacer()
-                BatchDragView(items: selectedItems, title: L("拖出选中项", "Drag selection")).frame(width: 116, height: 26)
-                Button(L("入栈", "Stack")) { selectedItems.forEach(workflow.addToStack) }.disabled(selected.isEmpty)
-                Button(L("复制", "Copy")) { copySelection() }.disabled(selected.isEmpty)
-                Button(L("粘贴", "Paste")) { if let item = selectedItems.first { PasteCoordinator.shared.paste(item) } }.disabled(selected.count != 1).keyboardShortcut(.return, modifiers: [])
+                BatchDragView(items: selectedItems, title: L("按住拖出", "Hold to drag")).frame(width: 116, height: 26)
+                Button(L("入栈", "Stack")) { actions.addToStack(selectedItems) }.disabled(selection.isEmpty)
+                    .help(selection.isEmpty ? L("请先选择内容", "Select items first") : L("将选中内容加入栈粘贴板", "Add the selection to the paste stack"))
+                    .accessibilityIdentifier("history.stack")
+                Button(L("复制", "Copy")) { actions.copy(selectedItems) }.disabled(selection.isEmpty)
+                    .help(selection.isEmpty ? L("请先选择内容", "Select items first") : L("复制选中内容，保留原格式", "Copy the selection in its original format"))
+                    .accessibilityIdentifier("history.copy")
+                Button(L("粘贴", "Paste")) { if let item = selectedItems.first { paste(item) } }.disabled(!selection.canPaste).keyboardShortcut(.return, modifiers: [])
+                    .help(selection.canPaste ? L("粘贴到上一个应用", "Paste into the previous app") : L("请选择一条内容后粘贴", "Select exactly one item to paste"))
+                    .accessibilityIdentifier("history.paste")
             }.padding(12)
         }
         .navigationTitle(favoritesOnly ? L("收藏", "Favorites") : L("剪贴板历史", "Clipboard history"))
@@ -164,25 +202,47 @@ struct HistoryView: View {
             ToolbarItemGroup {
                 Button { searchFocused = true } label: { Image(systemName: "magnifyingglass") }.help(L("搜索 ⌘F", "Search ⌘F")).keyboardShortcut("f")
                 Picker(L("视图", "Layout"), selection: $workflow.document.layout) {
-                    Image(systemName: "list.bullet").tag("list")
-                    Image(systemName: "square.grid.2x2").tag("grid")
-                    Image(systemName: "rectangle.split.3x1").tag("horizontal")
+                    Image(systemName: "list.bullet").accessibilityLabel(L("列表", "List")).tag("list")
+                    Image(systemName: "square.grid.2x2").accessibilityLabel(L("网格", "Grid")).tag("grid")
+                    Image(systemName: "rectangle.split.3x1").accessibilityLabel(L("横向", "Horizontal")).tag("horizontal")
                 }.pickerStyle(.segmented).frame(width: 110)
-                Button { clipboard.isMonitoring ? clipboard.stopMonitoring() : clipboard.startMonitoring() } label: { Image(systemName: clipboard.isMonitoring ? "pause.circle" : "play.circle") }.help(clipboard.isMonitoring ? L("暂停记录", "Pause capture") : L("开始记录", "Start capture"))
+                Button { toggleMonitoring() } label: { Image(systemName: clipboard.isMonitoring ? "pause.circle" : "play.circle") }.help(clipboard.isMonitoring ? L("暂停记录", "Pause capture") : L("开始记录", "Start capture"))
+                    .accessibilityLabel(clipboard.isMonitoring ? L("暂停记录", "Pause capture") : L("开始记录", "Start capture"))
                 Button { clipboard.undoDelete() } label: { Image(systemName: "arrow.uturn.backward") }.disabled(!clipboard.canUndo).help(L("撤销删除", "Undo deletion")).keyboardShortcut("z")
                 Menu {
-                    Button(L("全部收藏", "Favorite selection")) { selectedItems.forEach { FavoriteManager.shared.addToFavorites($0) } }.disabled(selected.isEmpty)
-                    Button(L("取消选中项收藏", "Unfavorite selection")) { selectedItems.forEach { var value = $0; value.isFavorite = false; clipboard.update(value) } }.disabled(selected.isEmpty)
-                    Button(L("保存选中内容…", "Save selection…")) { exportSelection() }.disabled(selected.isEmpty)
-                    Button(L("删除选中", "Delete selection"), role: .destructive) { clipboard.deleteItems(selectedItems); selected.removeAll() }.disabled(selected.isEmpty)
+                    if selection.isEmpty {
+                        Text(L("请先选择列表中的内容", "Select items in the list first"))
+                        Divider()
+                    }
+                    Button(L("收藏选中项", "Favorite selection")) { selectedItems.forEach { FavoriteManager.shared.addToFavorites($0) } }.disabled(selection.isEmpty)
+                    Button(L("取消选中项收藏", "Unfavorite selection")) { selectedItems.forEach { var value = $0; value.isFavorite = false; clipboard.update(value) } }.disabled(selection.isEmpty)
+                    Button(L("保存选中内容…", "Save selection…")) { exportSelection() }.disabled(selection.isEmpty)
+                    Button(L("删除选中", "Delete selection"), role: .destructive) { clipboard.deleteItems(selectedItems); selected.removeAll() }.disabled(selection.isEmpty)
                     Divider()
                     Button(L("清理未收藏历史…", "Clear unprotected history…"), role: .destructive) { confirmClear = true }
                 } label: { Image(systemName: "ellipsis.circle") }
+                    .help(L("更多操作", "More actions")).accessibilityLabel(L("更多操作", "More actions"))
+                    .accessibilityIdentifier("history.moreActions")
             }
         }
         .onDeleteCommand { clipboard.deleteItems(selectedItems); selected.removeAll() }
+        .onChange(of: items.map(\.id)) { _, ids in selected.formIntersection(ids) }
         .sheet(item: $editItem) { ClipEditor(item: $0) }
         .confirmationDialog(L("清理历史？收藏和置顶会保留。", "Clear history? Favorites and pinned items will be kept."), isPresented: $confirmClear) { Button(L("清理", "Clear"), role: .destructive) { clipboard.clearAllItems() } }
+    }
+    private func resetFilters() {
+        clipboard.searchText = ""; type = "all"; source = ""; tag = "all"; recentDays = 0
+        selected.removeAll(); displayLimit = 100
+    }
+    private func toggleMonitoring() {
+        clipboard.lastError = nil
+        if clipboard.isMonitoring { clipboard.stopMonitoring() } else { clipboard.startMonitoring() }
+        workflow.status = clipboard.isMonitoring ? L("已开始记录剪贴板", "Clipboard capture started") : L("已暂停记录剪贴板", "Clipboard capture paused")
+    }
+    private func paste(_ item: ClipboardItem, plainText: Bool = false) {
+        clipboard.lastError = nil
+        workflow.status = ""
+        PasteCoordinator.shared.paste(item, plainText: plainText)
     }
     private func revealMore(after item: ClipboardItem) {
         let current = items
@@ -233,36 +293,40 @@ struct HistoryView: View {
         }.padding(12).frame(width: workflow.document.layout == "horizontal" ? 245 : nil)
             .background(selected.contains(item.id) ? Color.accentColor.opacity(0.16) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(selected.contains(item.id) ? Color.accentColor : Color.primary.opacity(0.1)))
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) { paste(item) }
             .onTapGesture { if NSEvent.modifierFlags.contains(.command) { if selected.contains(item.id) { selected.remove(item.id) } else { selected.insert(item.id) } } else { selected = [item.id] } }
-            .onTapGesture(count: 2) { PasteCoordinator.shared.paste(item) }
-            .contextMenu { itemMenu(item) }.onDrag { dragProvider(item) }
+            .contextMenu { itemMenu(item) }.nativeClipboardDrag(item)
     }
     @ViewBuilder private func itemMenu(_ item: ClipboardItem) -> some View {
-        Button(L("复制原格式", "Copy original")) { clipboard.copyToClipboard(item: item) }
-        Button(L("粘贴", "Paste")) { PasteCoordinator.shared.paste(item) }
-        Button(L("粘贴纯文本", "Paste plain text")) { PasteCoordinator.shared.paste(item, plainText: true) }
+        Button(L("复制原格式", "Copy original")) { actions.copy([item]) }
+        Button(L("粘贴", "Paste")) { paste(item) }
+        Button(L("粘贴纯文本", "Paste plain text")) { paste(item, plainText: true) }
         Divider()
         Button(item.isFavorite ? L("取消收藏", "Unfavorite") : L("收藏", "Favorite")) { FavoriteManager.shared.toggleFavorite(item) }
         Button(item.isPinned ? L("取消置顶", "Unpin") : L("置顶", "Pin")) { var value = item; value.isPinned.toggle(); clipboard.update(value) }
-        Menu(L("分类", "Category")) { ForEach(workflow.document.categories) { category in
+        Menu(L("分类", "Category")) {
+            if workflow.document.categories.isEmpty {
+                Button(L("在设置中添加分类…", "Add a category in Settings…")) { NotificationCenter.default.post(name: .init("CClipSection"), object: "settings") }
+            }
+            ForEach(workflow.document.categories) { category in
             Button((item.tags.contains(category.name) ? "✓ " : "") + category.name) { var value = item; if value.tags.contains(category.name) { value.tags.removeAll { $0 == category.name } } else { value.tags.append(category.name) }; clipboard.update(value) }
         } }
         Button(L("编辑与预览…", "Edit & preview…")) { editItem = item }
-        Button(L("加入栈", "Add to stack")) { workflow.addToStack(item) }
-        Button(L("加入拖拽容器", "Add to shelf")) { workflow.document.shelf.append(item) }
-        Button(L("存为快捷回复", "Save as reply")) { workflow.document.replies.append(.init(title: String(item.content.prefix(40)), item: item)) }
+        Button(L("加入栈", "Add to stack")) { actions.addToStack([item]) }
+        Button(L("加入拖拽容器", "Add to shelf")) { actions.addToShelf(item) }
+        Button(L("存为快捷回复", "Save as reply")) { actions.saveReply(item) }
         Button(L("共享到局域网", "Share over LAN")) { perform { try LANSyncService.shared.publish(item: item) } }
         Button(L("贴在桌面", "Float on desktop")) { FloatingClips.shared.show(item) }
         Divider()
         Button(L("删除", "Delete"), role: .destructive) { clipboard.deleteItem(item) }
     }
-    private func copySelection() {
-        perform { try clipboard.writeItemsToClipboard(selectedItems) }
-    }
     private func exportSelection() {
+        let snapshot = selectedItems
+        guard !snapshot.isEmpty else { return }
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let directory = panel.url else { return }
-        perform { for item in selectedItems { try saveClip(item, to: directory) } }
+        actions.export(snapshot, to: directory)
     }
 }
 
@@ -328,20 +392,13 @@ struct ClipPreview: View {
             }
             Group {
                 if item.type == .image { ClipboardThumbnail(item: item) }
-                else if item.type == .text || item.type == .code { ScrollView { Text(item.displayContent).font(item.type == .code ? .system(.body, design: .monospaced) : .body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(8) } }
-                else { VStack { Image(systemName: item.type.icon).font(.system(size: 40)); Text(item.displayContent).lineLimit(3); if let path = item.filePath { Button(L("快速查看", "Quick Look")) { quickLook(URL(fileURLWithPath: path)) } } } }
+                else if item.type == .text || item.type == .code { ScrollView { Text(item.displayContent).font(item.type == .code ? .system(.body, design: .monospaced) : .body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(8) }.nativeClipboardDragExcluded() }
+                else { VStack { Image(systemName: item.type.icon).font(.system(size: 40)); Text(item.displayContent).lineLimit(3); if let path = item.filePath { Button(L("快速查看", "Quick Look")) { quickLook(URL(fileURLWithPath: path)) }.nativeClipboardDragExcluded() } } }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 func imageForClip(_ item: ClipboardItem) -> NSImage? { item.data.flatMap(NSImage.init(data:)) ?? item.filePath.flatMap(NSImage.init(contentsOfFile:)) }
-func dragProvider(_ item: ClipboardItem) -> NSItemProvider {
-    guard DragCancellationController.shared.canBeginDrag else { return NSItemProvider() }
-    _ = DragCancellationController.shared.begin(native: false)
-    if let path = item.filePath { return NSItemProvider(contentsOf: URL(fileURLWithPath: path)) ?? NSItemProvider(object: item.content as NSString) }
-    if let image = imageForClip(item) { return NSItemProvider(object: image) }
-    return NSItemProvider(object: item.content as NSString)
-}
 func saveClip(_ item: ClipboardItem, to directory: URL) throws {
     let prefix = String(item.id.uuidString.prefix(8))
     let paths = item.fileURLs ?? item.filePath.map { [$0] } ?? []
@@ -455,10 +512,12 @@ struct StackView: View {
                     HStack {
                         Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary)
                         HistoryRow(item: item)
-                        Button { if index > 0 { state.document.stack.swapAt(index, index - 1) } } label: { Image(systemName: "arrow.up") }.disabled(index == 0).help(L("上移", "Move up"))
-                        Button { PasteCoordinator.shared.paste(item) { if let current = state.document.stack.firstIndex(where: { $0.id == item.id }) { state.document.stack.remove(at: current) } } } label: { Image(systemName: "doc.on.clipboard") }.help(L("粘贴此项", "Paste item"))
-                        Button { state.document.stack.remove(at: index) } label: { Image(systemName: "minus.circle") }.help(L("移除", "Remove"))
-                    }.onDrag { dragProvider(item) }
+                        HStack {
+                            Button { if index > 0 { state.document.stack.swapAt(index, index - 1) } } label: { Image(systemName: "arrow.up") }.disabled(index == 0).help(L("上移", "Move up"))
+                            Button { PasteCoordinator.shared.paste(item) { if let current = state.document.stack.firstIndex(where: { $0.id == item.id }) { state.document.stack.remove(at: current) } } } label: { Image(systemName: "doc.on.clipboard") }.help(L("粘贴此项", "Paste item"))
+                            Button { state.document.stack.remove(at: index) } label: { Image(systemName: "minus.circle") }.help(L("移除", "Remove"))
+                        }.nativeClipboardDragExcluded()
+                    }.nativeClipboardDrag(item)
                 }.onMove { state.document.stack.move(fromOffsets: $0, toOffset: $1) }
             }.overlay { if state.document.stack.isEmpty { Text(L("从历史菜单加入项目，或在下方按行添加。", "Add items from history or split text below.")).foregroundStyle(.secondary) } }
             HStack {
@@ -547,7 +606,14 @@ struct ShelfView: View {
             Text(L("拖进来暂存，再拖到其他应用。也可以用添加按钮。", "Drop items here, then drag them into another app. You can also use Add.")).foregroundStyle(.secondary)
             List {
                 ForEach(Array(state.document.shelf.enumerated()), id: \.offset) { index, item in
-                    HStack { HistoryRow(item: item); Spacer(); Button(L("复制", "Copy")) { ClipboardManager.shared.copyToClipboard(item: item) }; Button { state.document.shelf.remove(at: index) } label: { Image(systemName: "xmark.circle") }.help(L("移除", "Remove")) }.onDrag { dragProvider(item) }
+                    HStack {
+                        HistoryRow(item: item)
+                        Spacer()
+                        HStack {
+                            Button(L("复制", "Copy")) { ClipboardManager.shared.copyToClipboard(item: item) }
+                            Button { state.document.shelf.remove(at: index) } label: { Image(systemName: "xmark.circle") }.help(L("移除", "Remove"))
+                        }.nativeClipboardDragExcluded()
+                    }.nativeClipboardDrag(item)
                 }
             }.overlay(RoundedRectangle(cornerRadius: 10).stroke(targeted ? Color.accentColor : .clear, lineWidth: 3))
             HStack {

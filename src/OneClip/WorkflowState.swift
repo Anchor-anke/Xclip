@@ -205,6 +205,15 @@ class WorkflowState: ObservableObject {
         do { try persist(document) }
         catch { status = error.localizedDescription }
     }
+    /// Publish action results only after the updated document has been saved.
+    func updateDocument(_ mutation: (inout WorkflowDocument) -> Void) throws {
+        var updated = document
+        mutation(&updated)
+        try persist(updated)
+        isLoading = true
+        document = updated
+        isLoading = false
+    }
     func addToStack(_ item: ClipboardItem) {
         // Every stack occurrence has its own identity, even when the same clip is queued twice.
         document.stack.append(item.withNewIdentity())

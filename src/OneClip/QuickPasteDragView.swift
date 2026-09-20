@@ -4,6 +4,13 @@ import SwiftUI
 /// Uses the normal paste conversion without replacing the user's general clipboard.
 /// Detached writers remain valid after the temporary pasteboard is released.
 enum QuickPasteDragPayload {
+    static func writers(for items: [ClipboardItem], manager: ClipboardManager = .shared) throws -> [NSPasteboardWriting] {
+        guard !items.isEmpty else { throw ClipboardError.dataCorrupted }
+        // Prepare the entire selection before starting a session. A missing file
+        // must fail visibly instead of silently delivering only part of a batch.
+        return try items.flatMap { try writers(for: $0, manager: manager) }
+    }
+
     static func writers(for item: ClipboardItem, manager: ClipboardManager = .shared) throws -> [NSPasteboardWriting] {
         var sanitized = try item.materialized()
         let omittedTypes: Set<String> = [
@@ -25,6 +32,16 @@ enum QuickPasteDragPayload {
         defer { staging.releaseGlobally() }
         try manager.writeToClipboard(sanitized, board: staging)
         let writers: [NSPasteboardWriting] = try (staging.pasteboardItems ?? []).map { source in
+            if let value = source.string(forType: .fileURL) {
+                guard let url = URL(string: value), url.isFileURL,
+                      FileManager.default.isReadableFile(atPath: url.path) else {
+                    throw ClipboardError.dataCorrupted
+                }
+                // Give AppKit a native file writer, just as a Finder-style drag
+                // does. Do not wrap existing files in lazy content providers or
+                // copy their pasteboard metadata into an untyped data item.
+                return url as NSURL
+            }
             let writer = NSPasteboardItem()
             for type in source.types {
                 guard let data = source.data(forType: type), writer.setData(data, forType: type) else {

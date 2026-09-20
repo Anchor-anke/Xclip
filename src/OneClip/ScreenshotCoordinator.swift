@@ -8,18 +8,25 @@ final class ScreenshotCoordinator {
     private var requestedAction: CaptureWorkflowAction?
     private lazy var session = ScreenshotSession<CaptureAnnotationResult>(actions: .init(
         isAllowed: { !PrivacyLock.shared.locked },
-        prepare: { try CaptureService.shared.prepareForCapture() },
+        prepare: {
+            try CaptureService.shared.prepareForCapture()
+            CaptureStartupTiming.mark("permission-ready")
+        },
         conceal: { [weak self] in
             self?.presentation = ScreenshotPresentation()
-            NSApp.hide(nil)
+            // The capture filter excludes Xclip. Hiding and then activating the
+            // application adds a desktop/window transition before the first frame.
         },
         capture: { [weak self] in
             try await CaptureCountdown.shared.wait(seconds: CapturePreferences.shared.delay) { self?.cancel() }
-            try await Task.sleep(nanoseconds: 250_000_000)
+            // The native snapshot excludes Xclip itself, so it need not wait
+            // for the application's hide animation before freezing the desktop.
+            CaptureStartupTiming.mark("capture-requested")
             return try await CaptureService.shared.captureAndAnnotate(mode: CapturePreferences.shared.smartSelection ? .window : .region, action: self?.requestedAction)
         },
         cancelCapture: { CaptureService.shared.cancel() },
         restore: { [weak self] in
+            CaptureStartupTiming.finish()
             self?.presentation?.restore(locked: PrivacyLock.shared.locked)
             self?.presentation = nil
         },
@@ -33,11 +40,13 @@ final class ScreenshotCoordinator {
         guard !PrivacyLock.shared.locked else { return }
         if CaptureWorkflowCoordinator.shared.toggleLive() { return }
         guard !session.isActive else { return }
+        CaptureStartupTiming.begin()
         requestedAction = action; session.start()
     }
     func cancel() { session.cancel(); CaptureWorkflowCoordinator.shared.cancelAll() }
 
     private static func showFailure(_ error: Error) {
+        CaptureStartupTiming.finish()
         WorkflowState.shared.status = error.localizedDescription
         let alert = NSAlert()
         alert.messageText = L("截屏暂不可用", "Screenshot unavailable")

@@ -129,6 +129,37 @@ enum QuickPasteTests {
         try expect(try imageFileURL().standardizedFileURL == memoryImageURL.standardizedFileURL,
                    "Dragging the same memory image again reuses its exported file")
 
+        guard let secondBitmap = NSBitmapImageRep(data: png) else { throw ClipboardError.imageProcessingFailed }
+        secondBitmap.setColor(NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1), atX: 0, y: 0)
+        guard let secondPNG = secondBitmap.representation(using: .png, properties: [:]), secondPNG != png else {
+            throw ClipboardError.imageProcessingFailed
+        }
+        // Keep the display name identical: attachment identity must follow image content.
+        let secondPicture = ClipboardItem(id: UUID(), content: picture.content, type: .image, timestamp: Date(), data: secondPNG)
+        try write(secondPicture)
+        let secondImageURL = try imageFileURL()
+        try expect(secondImageURL.lastPathComponent != memoryImageURL.lastPathComponent,
+                   "Different image content exports distinct attachment names for receivers that reject duplicate filenames")
+        try expect(try Data(contentsOf: memoryImageURL) == png && Data(contentsOf: secondImageURL) == secondPNG,
+                   "Exporting a second image preserves both attachments' original PNG bytes")
+        try write(secondPicture)
+        try expect(try imageFileURL().standardizedFileURL == secondImageURL.standardizedFileURL,
+                   "Dragging the second image again reuses its own stable filename and file URL")
+
+        let imageBatchWriters = try QuickPasteDragPayload.writers(for: [picture, secondPicture], manager: manager)
+        board.clearContents()
+        try expect(board.writeObjects(imageBatchWriters), "Two-image batch writers can be published atomically")
+        let imageBatchItems = board.pasteboardItems ?? []
+        let imageBatchURLs = board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        try expect(imageBatchItems.count == 2 && imageBatchURLs.map(\.standardizedFileURL) == [memoryImageURL, secondImageURL].map(\.standardizedFileURL),
+                   "A two-image batch exposes exactly one native file URL per selected image")
+        try expect(Set(imageBatchURLs.map(\.lastPathComponent)).count == 2,
+                   "A two-image batch contains no duplicate attachment filenames")
+        try expect(try imageBatchURLs.map { try Data(contentsOf: $0) } == [png, secondPNG],
+                   "Batch attachment files match their respective selected image bytes")
+        try expect(imageBatchItems.map { $0.data(forType: .png) } == [png, secondPNG] && imageBatchItems.allSatisfy { $0.data(forType: .tiff).flatMap(NSImage.init(data:)) != nil },
+                   "Each batch image retains its original PNG and decodable TIFF alongside its file URL")
+
         let imagePath = directory.appendingPathComponent("retained-image.png")
         try png.write(to: imagePath)
         let retainedPicture = ClipboardItem(id: UUID(), content: "Retained image", type: .image, timestamp: Date(), filePath: imagePath.path)
@@ -195,6 +226,9 @@ enum QuickPasteTests {
         try Data("Synthetic first attachment".utf8).write(to: first)
         try Data("Synthetic second attachment".utf8).write(to: second)
         let files = ClipboardItem(id: UUID(), content: "Two same-name files", type: .file, timestamp: Date(), fileURLs: [first.path, second.path])
+        let nativeWriters = try QuickPasteDragPayload.writers(for: files, manager: manager)
+        try expect(nativeWriters.count == 2 && nativeWriters.allSatisfy { $0 is NSURL },
+                   "File drags provide native NSURL writers instead of lazy file-content providers")
         try write(files)
         let urls = (board.pasteboardItems ?? []).compactMap { $0.string(forType: .fileURL) }.compactMap(URL.init(string:))
         try expect(urls.count == 2 && Set(urls.map(\.standardizedFileURL)) == Set([first, second].map(\.standardizedFileURL)),
@@ -214,6 +248,33 @@ enum QuickPasteTests {
         try expect(try Set(memoryURLs.map { try String(contentsOf: $0, encoding: .utf8) }) == ["Synthetic first attachment", "Synthetic second attachment"],
                    "Session-only attachment drag preserves all original bytes")
 
+        // The batch button and every native row use this exact selection path.
+        // Test receiver-visible files rather than the representation helper alone.
+        let batchWriters = try QuickPasteDragPayload.writers(for: [memoryFile, text], manager: manager)
+        board.clearContents()
+        try expect(board.writeObjects(batchWriters), "Mixed batch writers can be published atomically")
+        let batchURLs = (board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+        try expect(board.pasteboardItems?.count == 3 && batchURLs.count == 2,
+                   "A mixed batch preserves both RAM files and the separate text item")
+        try expect(batchURLs.allSatisfy { $0.lastPathComponent == "同名笔记.txt" },
+                   "RAM files retain their original Unicode names, including duplicate names")
+        try expect(board.pasteboardItems?.last?.string(forType: .string) == text.content,
+                   "Mixed selection text preserves Unicode and line breaks")
+        board.clearContents()
+        manager.cleanupImageDragFiles()
+        try expect(try Set(batchURLs.map { try String(contentsOf: $0, encoding: .utf8) }) == ["Synthetic first attachment", "Synthetic second attachment"],
+                   "File receivers can still read RAM attachments after pasteboard release and image-drag cleanup")
+
+        let specialName = directory.appendingPathComponent("预算 #1 100% & notes.txt")
+        try Data("Synthetic file URL encoding".utf8).write(to: specialName)
+        let namedFile = ClipboardItem(id: UUID(), content: specialName.lastPathComponent, type: .document, timestamp: Date(), filePath: specialName.path)
+        try write(namedFile)
+        let namedURLs = (board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+        try expect(namedURLs.map(\.standardizedFileURL) == [specialName.standardizedFileURL],
+                   "File-path-only attachments preserve spaces, Unicode, percent signs and URL delimiters")
+        try expect(board.string(forType: .string) != namedFile.content,
+                   "File attachments never degrade into their display-name text")
+
         let missing = ClipboardItem(id: UUID(), content: "Missing attachment", type: .file, timestamp: Date(), fileURLs: [directory.appendingPathComponent("does-not-exist.txt").path])
         let brokenImage = ClipboardItem(id: UUID(), content: "Invalid image", type: .image, timestamp: Date(), data: Data([1, 2, 3]))
         for item in [missing, brokenImage] {
@@ -223,6 +284,13 @@ enum QuickPasteTests {
             } catch ClipboardError.dataCorrupted {
                 try expect(true, "\(item.content) fails before a drag session can start")
             }
+        }
+
+        do {
+            _ = try QuickPasteDragPayload.writers(for: [namedFile, missing], manager: manager)
+            throw NSError(domain: "CClipQuickPasteTests", code: 2, userInfo: [NSLocalizedDescriptionKey: "A partially missing batch was accepted"])
+        } catch ClipboardError.dataCorrupted {
+            try expect(true, "A missing batch attachment fails the entire selection instead of returning partial writers")
         }
 
         manager.cleanupImageDragFiles()

@@ -12,7 +12,7 @@ cat > "$TEST_APP/Contents/Info.plist" <<PLIST
 PLIST
 ditto src/Resources/Formula "$TEST_APP/Contents/Resources/Formula"
 xcrun swiftc -swift-version 5 -parse-as-library -module-cache-path .build/ModuleCache \
-  src/OneClip/AppLanguage.swift src/OneClip/CaptureTools.swift src/OneClip/ImageEditorView.swift src/OneClip/SessionTemporaryFiles.swift \
+  src/OneClip/AppLanguage.swift src/OneClip/CaptureTools.swift src/OneClip/CaptureDesktopSnapshot.swift src/OneClip/ImageEditorView.swift src/OneClip/SessionTemporaryFiles.swift \
   src/OneClip/CaptureAnnotation.swift src/OneClip/CaptureAnnotationOverlay.swift \
   src/OneClip/CaptureAnnotationOptions.swift src/OneClip/CaptureRedaction.swift src/OneClip/CaptureSelectionOptions.swift \
   src/OneClip/CaptureOutput.swift src/OneClip/CaptureRecognitionService.swift src/OneClip/CaptureFormulaPreview.swift \

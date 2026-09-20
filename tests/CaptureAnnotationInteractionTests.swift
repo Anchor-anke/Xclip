@@ -165,6 +165,7 @@ struct CaptureAnnotationInteractionTests {
         let window = NSWindow(contentRect: CGRect(x: -5000, y: -5000, width: 900, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = view
         defer { window.contentView = nil; window.close() }
+        drag(view, from: CGPoint(x: 50, y: 50), to: CGPoint(x: 850, y: 500))
         let bars = view.subviews.compactMap { $0 as? NSVisualEffectView }
         guard let toolbar = bars.first(where: { $0.subviews.contains { ($0 as? NSButton)?.tag == 104 } }),
               let properties = bars.first(where: { $0.subviews.contains { $0 is NSSlider } }) else { fatalError("Expected two floating toolbars") }
@@ -189,6 +190,53 @@ struct CaptureAnnotationInteractionTests {
         require(!window.isVisible, "Toolbar layout tests keep their host window hidden")
     }
 
+    @MainActor static func lazyToolbarTests(source: CGImage) {
+        let view = CaptureAnnotationView(frame: CGRect(x: 0, y: 0, width: 900, height: 600), image: source, selectsFullImage: false)
+        let window = NSWindow(contentRect: CGRect(x: -5000, y: -5000, width: 900, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = view
+        defer { window.contentView = nil; window.close() }
+        require(descendants(view).allSatisfy { !($0 is NSButton) && !($0 is NSVisualEffectView) },
+                "The initial selection canvas creates no editing buttons or toolbars")
+        require(descendants(view).compactMap { $0 as? NSTextField }.count == 2,
+                "The initial canvas retains its selection hint and size labels")
+        view.mouseDown(with: mouse(.leftMouseDown, at: CGPoint(x: 100, y: 100), in: view))
+        view.mouseDragged(with: mouse(.leftMouseDragged, at: CGPoint(x: 600, y: 400), in: view))
+        require(view.document.selection != nil && descendants(view).allSatisfy { !($0 is NSButton) && !($0 is NSVisualEffectView) },
+                "An unfinished region drag keeps editing controls unbuilt")
+        view.mouseUp(with: mouse(.leftMouseUp, at: CGPoint(x: 600, y: 400), in: view))
+        let bars = view.subviews.compactMap { $0 as? NSVisualEffectView }
+        guard let toolbar = bars.first(where: { $0.subviews.contains { ($0 as? NSButton)?.tag == 104 } }) else {
+            fatalError("Completing the first region must create its action toolbar")
+        }
+        let controls = descendants(view).compactMap { $0 as? NSButton }
+        let identities = Set(controls.map(ObjectIdentifier.init))
+        require(bars.count == 2 && !toolbar.isHidden && !controls.isEmpty,
+                "Completing the first region creates both toolbars and shows the main actions")
+        for index in 1...2 {
+            view.reset()
+            require(view.document.selection == nil && bars.allSatisfy(\.isHidden),
+                    "Reset \(index) hides the existing toolbars without leaving a selection")
+            drag(view, from: CGPoint(x: 100, y: 100), to: CGPoint(x: 600, y: 400))
+            require(!toolbar.isHidden && Set(descendants(view).compactMap { $0 as? NSButton }.map(ObjectIdentifier.init)) == identities
+                    && Set(view.subviews.compactMap { $0 as? NSVisualEffectView }.map(ObjectIdentifier.init)) == Set(bars.map(ObjectIdentifier.init)),
+                    "Reselection \(index) reuses the same controls and toolbar instances without duplicates")
+        }
+
+        let selectAll = CaptureAnnotationView(frame: view.frame, image: source, selectsFullImage: false)
+        window.contentView = selectAll
+        require(selectAll.performKeyEquivalent(with: key(0, "a", flags: .command, in: selectAll)), "Command-A selects the display from the initial canvas")
+        require(selectAll.document.selection == CGRect(x: 0, y: 0, width: source.width, height: source.height)
+                    && selectAll.subviews.compactMap { $0 as? NSVisualEffectView }.contains { !$0.isHidden && $0.subviews.contains { ($0 as? NSButton)?.tag == 104 } },
+                "Command-A builds and reveals the initial action toolbar")
+
+        let fullImage = CaptureAnnotationView(frame: view.frame, image: source, selectsFullImage: true)
+        window.contentView = fullImage
+        require(fullImage.document.selection == CGRect(x: 0, y: 0, width: source.width, height: source.height)
+                    && fullImage.subviews.compactMap { $0 as? NSVisualEffectView }.contains { !$0.isHidden && $0.subviews.contains { ($0 as? NSButton)?.tag == 104 } },
+                "Full-image mode starts with its selected image and visible action toolbar")
+        require(!window.isVisible, "Lazy-toolbar tests keep their host window hidden")
+    }
+
     @MainActor static func windowCandidateTests(source: CGImage) throws {
         let front = CGRect(x: 200, y: 200, width: 600, height: 500)
         let back = CGRect(x: 400, y: 350, width: 800, height: 500)
@@ -202,6 +250,8 @@ struct CaptureAnnotationInteractionTests {
         let overlap = CGPoint(x: 250, y: 200)
         view.mouseMoved(with: mouse(.mouseMoved, at: overlap, in: view))
         require(view.document.selection == nil && outputs == 0, "Hovering a window candidate previews it without selecting or exporting")
+        require(descendants(view).allSatisfy { !($0 is NSButton) && !($0 is NSVisualEffectView) },
+                "Hovering a window candidate does not construct editing toolbars")
         guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { fatalError("Unable to render the window candidate preview") }
         view.cacheDisplay(in: view.bounds, to: bitmap)
         let preview = try bytes(bitmap.cgImage!)
@@ -342,6 +392,7 @@ struct CaptureAnnotationInteractionTests {
         try windowCandidateTests(source: source)
         outerHandleTests(source: source)
         try editExistingObjects(source: source)
+        lazyToolbarTests(source: source)
         toolbarTests(source: source)
         try advancedInteractions(source: source)
         initialActionTests(source: source)

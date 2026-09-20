@@ -212,10 +212,10 @@ final class CaptureService: ObservableObject {
                     } else {
                         windows = []
                     }
+                    let images = try await CaptureDesktopSnapshot.images(for: layout.map(\.displayID))
                     var frozen: [CaptureAnnotationSnapshot] = []
                     for display in layout {
-                        let data = try await self.runCaptureCommand(arguments: ["-D", String(display.captureIndex)])
-                        let image = try CaptureImageCodec.decode(data)
+                        guard let image = images[display.displayID] else { throw CaptureToolError.captureFailed }
                         if mode == .window {
                             let regions = self.windowRegions(windows, on: display.frame, image: image)
                             frozen.append(CaptureAnnotationSnapshot(frame: display.frame, image: image,
@@ -226,11 +226,12 @@ final class CaptureService: ObservableObject {
                     }
                     snapshots = frozen
                 case .fullScreen:
-                    let data = try await self.runCaptureCommand(arguments: ["-m"])
                     guard let display = layout.first(where: { $0.displayID == CGMainDisplayID() }) else {
                         throw CaptureToolError.captureFailed
                     }
-                    snapshots = [CaptureAnnotationSnapshot(frame: display.frame, image: try CaptureImageCodec.decode(data), selectsFullImage: true, initialAction: action)]
+                    let images = try await CaptureDesktopSnapshot.images(for: [display.displayID])
+                    guard let image = images[display.displayID] else { throw CaptureToolError.captureFailed }
+                    snapshots = [CaptureAnnotationSnapshot(frame: display.frame, image: image, selectsFullImage: true, initialAction: action)]
                 }
                 guard try self.captureDisplayLayout() == layout else {
                     self.captureDisplayConfigurationChanged = true
@@ -246,6 +247,15 @@ final class CaptureService: ObservableObject {
             } catch {
                 if self.captureDisplayConfigurationChanged {
                     throw CaptureMessage("显示器设置已变化，截图已取消。请重新截图。", "Display settings changed, so capture was cancelled. Start a new capture.")
+                }
+                if CaptureDesktopSnapshot.isPermissionDenied(error) {
+                    throw CaptureToolError.permissionDenied
+                }
+                if let snapshotError = error as? CaptureDesktopSnapshotError {
+                    switch snapshotError {
+                    case .imageTooLarge: throw CaptureToolError.imageTooLarge
+                    case .invalidDisplay, .invalidImageSize: throw CaptureToolError.captureFailed
+                    }
                 }
                 throw error
             }

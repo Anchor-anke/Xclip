@@ -38,6 +38,8 @@ enum AppSmokeTests {
         try workflowReadProtection(root, store: manager.store)
         try workspace(manager, settings, root)
         try routes()
+        try HistoryActionsTests.run(settings: settings, root: root)
+        try NativeClipboardDragTests.run()
         try LanguageTests.run()
         try QuickPasteTests.run(manager: manager, root: root)
         try QuickPasteContextMenuTests.run()

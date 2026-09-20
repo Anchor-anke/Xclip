@@ -368,7 +368,10 @@ class ClipboardManager: ObservableObject {
         let digest = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
         let imageDirectory = directory.appendingPathComponent(digest, isDirectory: true)
         try FileManager.default.createDirectory(at: imageDirectory, withIntermediateDirectories: true)
-        let url = imageDirectory.appendingPathComponent("Xclip.png")
+        // Attachment receivers can deduplicate by the visible filename even
+        // when the parent directories differ. Give each image its own stable
+        // name, while repeated drags of the same pixels reuse the same export.
+        let url = imageDirectory.appendingPathComponent("Xclip-\(digest.prefix(24)).png")
         if !FileManager.default.fileExists(atPath: url.path) {
             try png.write(to: url, options: .atomic)
         }

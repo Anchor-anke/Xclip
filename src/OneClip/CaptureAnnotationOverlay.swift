@@ -63,6 +63,7 @@ final class CaptureAnnotationController {
                     panel.hidesOnDeactivate = false
                     panel.acceptsMouseMovedEvents = true
                     panel.isReleasedWhenClosed = false
+                    panel.animationBehavior = .none
                     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
                     let canvas = CaptureAnnotationView(frame: CGRect(origin: .zero, size: snapshot.frame.size),
                                                        image: snapshot.image, selectsFullImage: snapshot.selectsFullImage,
@@ -88,11 +89,20 @@ final class CaptureAnnotationController {
                     panels.append(panel)
                     panel.orderFrontRegardless()
                 }
+                CaptureStartupTiming.mark("panels-ordered")
                 NSApp.unhideWithoutActivation()
                 NSApp.activate(ignoringOtherApps: true)
                 let active = panels.first { $0.frame.contains(NSEvent.mouseLocation) } ?? panels.first
                 active?.makeKeyAndOrderFront(nil)
                 active?.makeFirstResponder(active?.contentView)
+                CaptureStartupTiming.mark("activated")
+                // Prepare the window's backing, then draw the canvas in this cycle.
+                // A window-only displayIfNeeded can leave the first view draw deferred.
+                panels.forEach { panel in
+                    panel.displayIfNeeded()
+                    panel.contentView?.layoutSubtreeIfNeeded()
+                    panel.contentView?.display()
+                }
                 observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
                     Task { @MainActor in self?.cancel() }
                 })
@@ -185,16 +195,17 @@ final class CaptureAnnotationView: NSView {
     private var lockedAspectRatio: CGFloat?
     private var initialAction: CaptureWorkflowAction?
     private var optionsPopover: NSPopover?
-    private var optionsButton = NSButton()
+    private lazy var optionsButton = NSButton()
     private var dragStart: CGPoint?
     private var originalSelection: CGRect?
     private var dragHandle: CaptureSelectionHandle?
     private var moving = false
     private var selecting = false
-    private var toolbar = NSVisualEffectView()
-    private var propertiesBar = NSVisualEffectView()
-    private var propertyLabel = NSTextField(labelWithString: "")
-    private var mosaicSlider = NSSlider(value: 8, minValue: 3, maxValue: 32, target: nil, action: nil)
+    private var toolbarBuilt = false
+    private lazy var toolbar = NSVisualEffectView()
+    private lazy var propertiesBar = NSVisualEffectView()
+    private lazy var propertyLabel = NSTextField(labelWithString: "")
+    private lazy var mosaicSlider = NSSlider(value: 8, minValue: 3, maxValue: 32, target: nil, action: nil)
     private var mosaicStrength: CGFloat = 8
     private var selectedStroke: Int?
     private var originalStroke: ImageEditStroke?
@@ -206,16 +217,16 @@ final class CaptureAnnotationView: NSView {
     private lazy var pixelSampler = NSBitmapImageRep(cgImage: document.source)
     private var toolButtons: [NSButton] = []
     private var colorButtons: [NSButton] = []
-    private var undoButton = NSButton()
-    private var redoButton = NSButton()
+    private lazy var undoButton = NSButton()
+    private lazy var redoButton = NSButton()
     private var sizeField = NSTextField(labelWithString: "")
     private var hintField = NSTextField(labelWithString: "")
     private var textEditor: CaptureInlineTextView?
     private var textScroll: NSScrollView?
     private var textOrigin: CGPoint?
     private var textStyle: ImageEditStroke?
-    private var lineWidthPopup = NSPopUpButton()
-    private var textSizePopup = NSPopUpButton()
+    private lazy var lineWidthPopup = NSPopUpButton()
+    private lazy var textSizePopup = NSPopUpButton()
     private var tracking: NSTrackingArea?
     private var tools: [ImageEditTool?] = [nil] + CaptureToolbarConfiguration.load().map(Optional.some)
     private let keyboardTools: [ImageEditTool?] = [nil, .rectangle, .ellipse, .arrow, .pen, .highlight, .text, .number, .mosaic]
@@ -229,12 +240,13 @@ final class CaptureAnnotationView: NSView {
         self.initialAction = initialAction
         super.init(frame: frame)
         if selectsFullImage { document.setSelection(imageBounds) }
-        buildToolbar()
+        buildSelectionLabels()
         updateUI()
         if selectsFullImage, initialAction != nil { DispatchQueue.main.async { [weak self] in self?.runInitialAction() } }
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel(CaptureLocalization.text("截图画布。拖动框选，V 调整选区，方向键微调，Enter 复制，Esc 取消。", "Capture canvas. Drag to select, V to adjust, arrow keys to nudge, Return to copy, Escape to cancel."))
+        CaptureStartupTiming.mark("canvas-ready")
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     deinit { redactionTask?.cancel() }
@@ -260,6 +272,8 @@ final class CaptureAnnotationView: NSView {
     }
 
     private func buildToolbar() {
+        guard !toolbarBuilt else { return }
+        toolbarBuilt = true
         for bar in [toolbar, propertiesBar] {
             bar.material = .popover; bar.blendingMode = .withinWindow; bar.state = .active
             bar.appearance = NSAppearance(named: .aqua)
@@ -268,7 +282,7 @@ final class CaptureAnnotationView: NSView {
             bar.layer?.borderWidth = 1; bar.layer?.borderColor = NSColor.black.withAlphaComponent(0.16).cgColor
             bar.shadow = NSShadow(); bar.layer?.shadowOpacity = 0.2
             bar.layer?.shadowRadius = 5; bar.layer?.shadowOffset = CGSize(width: 0, height: -2)
-            addSubview(bar)
+            addSubview(bar, positioned: .below, relativeTo: sizeField)
         }
         rebuildToolButtons()
         undoButton = makeButton(symbol: "arrow.uturn.backward", title: CaptureLocalization.text("撤销 (⌘Z)", "Undo (⌘Z)"), action: #selector(undo))
@@ -316,6 +330,9 @@ final class CaptureAnnotationView: NSView {
         propertiesBar.addSubview(mosaicSlider)
         optionsButton = makeButton(symbol: "slider.horizontal.3", title: "样式、颜色和工具选项", action: #selector(showOptions(_:)))
         propertiesBar.addSubview(optionsButton)
+    }
+
+    private func buildSelectionLabels() {
         sizeField.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         sizeField.textColor = .white; sizeField.backgroundColor = NSColor.black.withAlphaComponent(0.82)
         sizeField.drawsBackground = true; sizeField.alignment = .center
@@ -367,6 +384,19 @@ final class CaptureAnnotationView: NSView {
 
     override func layout() { super.layout(); positionControls() }
     private func positionControls() {
+        if toolbarBuilt { positionToolbar() }
+        if let selection = document.selection ?? hoverRegion {
+            let rect = displayRect(selection)
+            sizeField.frame = CGRect(x: min(bounds.maxX - 228, max(8, rect.minX)), y: max(8, rect.minY - 26), width: 220, height: 21)
+        }
+        let hintWidth = min(bounds.width - 32, 600)
+        hintField.frame = CGRect(x: (bounds.width - hintWidth) / 2, y: bounds.maxY - 36, width: hintWidth, height: 24)
+        hintField.isHidden = document.selection != nil && textEditor == nil && tool != .polyline && tool != .magnify && tool != .inpaint
+        if toolbarBuilt, !toolbar.isHidden, hintField.frame.intersects(toolbar.frame) { hintField.isHidden = true }
+        if document.selection == nil, let pointer, hintField.frame.intersects(loupeFrame(at: pointer)) { hintField.isHidden = true }
+    }
+
+    private func positionToolbar() {
         let toolbarWidth = min(730, max(280, bounds.width - 16))
         let cellWidth = (toolbarWidth - 20) / CGFloat(tools.count + 10)
         for (i, button) in toolButtons.enumerated() {
@@ -397,20 +427,12 @@ final class CaptureAnnotationView: NSView {
                 width: min(propertyWidth, bounds.width - 16), height: 40)
             propertiesBar.frame.origin.y = min(bounds.maxY - 48, max(8, propertiesBar.frame.minY))
             optionsButton.frame.origin.x = min(optionsButton.frame.minX, propertiesBar.frame.width - 36)
-            sizeField.frame = CGRect(x: min(bounds.maxX - 228, max(8, rect.minX)), y: max(8, rect.minY - 26), width: 220, height: 21)
         }
-        let hintWidth = min(bounds.width - 32, 600)
-        hintField.frame = CGRect(x: (bounds.width - hintWidth) / 2, y: bounds.maxY - 36, width: hintWidth, height: 24)
-        hintField.isHidden = document.selection != nil && textEditor == nil && tool != .polyline && tool != .magnify && tool != .inpaint
-        if !toolbar.isHidden && hintField.frame.intersects(toolbar.frame) { hintField.isHidden = true }
-        if document.selection == nil, let pointer, hintField.frame.intersects(loupeFrame(at: pointer)) { hintField.isHidden = true }
     }
 
-    private func updateUI() {
+    private func updateToolbar() {
         toolbar.isHidden = document.selection == nil || selecting || moving || dragHandle != nil
         propertiesBar.isHidden = toolbar.isHidden || tool == nil
-        sizeField.isHidden = document.selection == nil && hoverRegion == nil
-        if let selection = document.selection ?? hoverRegion { sizeField.stringValue = "\(Int(selection.minX)), \(Int(selection.minY))  \(Int(selection.integral.width)) × \(Int(selection.integral.height))" }
         for (index, button) in toolButtons.enumerated() {
             let selected = tools[index] == tool
             button.layer?.backgroundColor = selected ? NSColor.systemBlue.withAlphaComponent(0.16).cgColor : NSColor.clear.cgColor
@@ -435,6 +457,15 @@ final class CaptureAnnotationView: NSView {
         let fontTitle = "\(Int(preferences.textSize))"
         if textSizePopup.item(withTitle: fontTitle) == nil { textSizePopup.addItem(withTitle: fontTitle) }
         textSizePopup.selectItem(withTitle: fontTitle)
+    }
+
+    private func updateUI() {
+        // Selection hints and window hover need no editing controls. Build those
+        // only when a finished selection can actually show the toolbar.
+        if document.selection != nil, !selecting, !moving, dragHandle == nil { buildToolbar() }
+        if toolbarBuilt { updateToolbar() }
+        sizeField.isHidden = document.selection == nil && hoverRegion == nil
+        if let selection = document.selection ?? hoverRegion { sizeField.stringValue = "\(Int(selection.minX)), \(Int(selection.minY))  \(Int(selection.integral.width)) × \(Int(selection.integral.height))" }
         if document.selection == nil {
             hintField.stringValue = windowRegions.isEmpty
                 ? CaptureLocalization.text("拖动框选截图区域 · ⌘A 全选当前屏幕 · Esc 取消", "Drag to select · ⌘A Select this display · Esc Cancel")
@@ -507,9 +538,15 @@ final class CaptureAnnotationView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        defer { drawLoupe() }
+        CaptureStartupTiming.mark("draw-entry")
+        defer {
+            drawLoupe()
+            CaptureStartupTiming.mark("first-frame-drawn")
+            CaptureStartupTiming.finish()
+        }
         NSColor(calibratedWhite: 0.06, alpha: 1).setFill(); bounds.fill()
         drawImage(document.source, in: imageRect)
+        CaptureStartupTiming.mark("source-drawn")
         NSColor.black.withAlphaComponent(0.36).setFill(); bounds.fill()
         guard let selection = document.selection ?? hoverRegion, let context = NSGraphicsContext.current?.cgContext else { return }
         let rect = displayRect(selection)

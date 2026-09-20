@@ -73,6 +73,11 @@
 		75525622C99AF2FB299579BD /* ClipboardThumbnail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5873E7A09378BAD8343F1FF6 /* ClipboardThumbnail.swift */; };
 		159DB571655B736798FCF062 /* MemoryOptimizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAEC82DA4AEBC97E42890678 /* MemoryOptimizationTests.swift */; };
 		762119C1DA5C79E4CF0F3BC2 /* SessionTemporaryFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CDED6E7780BD0A06C961F3E /* SessionTemporaryFiles.swift */; };
+		2BB3505D325EBF68254E075C /* NativeClipboardDrag.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBB814CD0812145C0D9C787E /* NativeClipboardDrag.swift */; };
+		EEC4EEA19D58FF426478E3B8 /* NativeClipboardDragTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B181E5D184A41C482A389318 /* NativeClipboardDragTests.swift */; };
+		84DA86BE83B8EC0FCE22700D /* CaptureDesktopSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E958720D0533E4540CF98EA /* CaptureDesktopSnapshot.swift */; };
+		D81745676A092EF8D52CC779 /* HistoryActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EA8D962976CB31C22A54FE2 /* HistoryActions.swift */; };
+		68EDDC36B4B51BBD1EF8FF39 /* HistoryActionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E05EF608CE9D36C1F40AFA58 /* HistoryActionsTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -145,6 +150,11 @@
 		5873E7A09378BAD8343F1FF6 /* ClipboardThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardThumbnail.swift; sourceTree = "<group>"; };
 		BAEC82DA4AEBC97E42890678 /* MemoryOptimizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryOptimizationTests.swift; sourceTree = "<group>"; };
 		4CDED6E7780BD0A06C961F3E /* SessionTemporaryFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTemporaryFiles.swift; sourceTree = "<group>"; };
+		CBB814CD0812145C0D9C787E /* NativeClipboardDrag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeClipboardDrag.swift; sourceTree = "<group>"; };
+		B181E5D184A41C482A389318 /* NativeClipboardDragTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeClipboardDragTests.swift; sourceTree = "<group>"; };
+		4E958720D0533E4540CF98EA /* CaptureDesktopSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureDesktopSnapshot.swift; sourceTree = "<group>"; };
+		7EA8D962976CB31C22A54FE2 /* HistoryActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryActions.swift; sourceTree = "<group>"; };
+		E05EF608CE9D36C1F40AFA58 /* HistoryActionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryActionsTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -178,6 +188,11 @@
 			isa = PBXGroup;
 			children = (
 				AA00000029A8B4B700123456 /* OneClipApp.swift */,
+				E05EF608CE9D36C1F40AFA58 /* HistoryActionsTests.swift */,
+				7EA8D962976CB31C22A54FE2 /* HistoryActions.swift */,
+				4E958720D0533E4540CF98EA /* CaptureDesktopSnapshot.swift */,
+				B181E5D184A41C482A389318 /* NativeClipboardDragTests.swift */,
+				CBB814CD0812145C0D9C787E /* NativeClipboardDrag.swift */,
 				4CDED6E7780BD0A06C961F3E /* SessionTemporaryFiles.swift */,
 				BAEC82DA4AEBC97E42890678 /* MemoryOptimizationTests.swift */,
 				5873E7A09378BAD8343F1FF6 /* ClipboardThumbnail.swift */,
@@ -345,6 +360,11 @@
 				AA00004129A8B5000123456 /* NotificationManager.swift in Sources */,
 				AA00004929A8B5000123456 /* FavoriteManager.swift in Sources */,
 				AA00000129A8B4B700123456 /* OneClipApp.swift in Sources */,
+				68EDDC36B4B51BBD1EF8FF39 /* HistoryActionsTests.swift in Sources */,
+				D81745676A092EF8D52CC779 /* HistoryActions.swift in Sources */,
+				84DA86BE83B8EC0FCE22700D /* CaptureDesktopSnapshot.swift in Sources */,
+				EEC4EEA19D58FF426478E3B8 /* NativeClipboardDragTests.swift in Sources */,
+				2BB3505D325EBF68254E075C /* NativeClipboardDrag.swift in Sources */,
 				762119C1DA5C79E4CF0F3BC2 /* SessionTemporaryFiles.swift in Sources */,
 				159DB571655B736798FCF062 /* MemoryOptimizationTests.swift in Sources */,
 				75525622C99AF2FB299579BD /* ClipboardThumbnail.swift in Sources */,
