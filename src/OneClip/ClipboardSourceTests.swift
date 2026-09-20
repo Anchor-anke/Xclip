@@ -38,6 +38,7 @@ enum ClipboardSourceTests {
         try legacyRecords(store: store)
         try transformedAndQueued(manager, board: board, directory: directory)
         try attachmentsAndBackup(manager, store: store, board: board, output: output, settings: settings, directory: directory)
+        try applicationImageCopies(manager, board: board, output: output, directory: directory)
         print("ClipboardSourceTests: \(checks) checks passed; synthetic application provenance only.")
     }
 
@@ -138,5 +139,38 @@ enum ClipboardSourceTests {
         try expect(try String(contentsOfFile: pasted.fileURLs!.first!, encoding: .utf8) == "Synthetic source attachment bytes"
                    && store.readItems() == persistedBefore,
                    "Session-only paste restores attachment bytes without writing source records into persistent history")
+    }
+
+    /// A QQ-style chat image copy publishes both a cache path and real image bytes on one pasteboard.
+    private static func applicationImageCopies(_ manager: ClipboardManager, board: NSPasteboard, output: NSPasteboard, directory: URL) throws {
+        let cache = directory.appendingPathComponent("synthetic-app-cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 40, pixelsHigh: 24, bitsPerSample: 8,
+                                      samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                      bytesPerRow: 160, bitsPerPixel: 32)!
+        memset(bitmap.bitmapData!, 128, 160 * 24)
+        let chatImage = cache.appendingPathComponent("chat-image.jpg")
+        try bitmap.representation(using: .jpeg, properties: [:])!.write(to: chatImage)
+        board.clearContents()
+        try expect(board.writeObjects([chatImage as NSURL]), "A named pasteboard accepts the synthetic chat image fixture")
+        board.setData(bitmap.representation(using: .tiff, properties: [:])!, forType: .tiff)
+        let captured = try manager.capture(from: board, sourceApp: "com.synthetic.chat", sourceAppName: "合成聊天应用")!
+        try expect(captured.type == .image && captured.fileURLs == nil,
+                   "An image copy that also names the source application's cache file is captured as image content")
+        try expect(captured.representations?["public.tiff"] != nil && captured.representations?["public.file-url"] == nil
+                   && captured.representations?["NSFilenamesPboardType"] == nil,
+                   "Image capture keeps image formats and drops the source application's cache path formats")
+        try FileManager.default.removeItem(at: chatImage)
+        try manager.writeToClipboard(captured, board: output)
+        try expect(output.data(forType: .tiff) != nil || output.data(forType: .png) != nil,
+                   "Re-pasting a recorded chat image supplies the image formats receivers ask for")
+        try expect((output.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []).isEmpty,
+                   "Re-pasting a recorded chat image never points receivers at the deleted source cache path")
+        let copiedFile = cache.appendingPathComponent("shared-photo.jpg")
+        try bitmap.representation(using: .jpeg, properties: [:])!.write(to: copiedFile)
+        board.clearContents(); board.writeObjects([copiedFile as NSURL])
+        let file = try manager.capture(from: board, sourceApp: "com.synthetic.files", sourceAppName: "合成文件管理器")!
+        try expect(file.type == .image && file.fileURLs?.count == 1,
+                   "A plain file copy of an image keeps file semantics because it carries no image formats")
     }
 }

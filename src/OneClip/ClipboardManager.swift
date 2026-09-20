@@ -140,6 +140,13 @@ class ClipboardManager: ObservableObject {
     static func readItem(from board: NSPasteboard) throws -> ClipboardItem? {
         let files = (board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []).filter(\.isFileURL)
         if !files.isEmpty {
+            // A chat application publishes an image copy as both its own cache path and real image bytes,
+            // while a file copy carries no image format at all. Only the former is an image content copy.
+            if files.count == 1, fileType(files[0]) == .image, let data = imageData(from: board, file: files[0]) {
+                var item = ClipboardItem(id: UUID(), content: "Image", type: .image, timestamp: Date(), data: data)
+                item.representations = try imageRepresentations(from: board)
+                return item
+            }
             var item = ClipboardItem(id: UUID(), content: files.map(\.lastPathComponent).joined(separator: "\n"), type: fileType(files[0]), timestamp: Date(), filePath: files.first?.path)
             item.fileURLs = files.map(\.path)
             return item
@@ -173,6 +180,32 @@ class ClipboardManager: ObservableObject {
     }
     private static func isWritableRepresentation(_ type: String) -> Bool {
         type.contains(".") && type.unicodeScalars.allSatisfy { CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-").contains($0) }
+    }
+    /// Image formats on the pasteboard are what marks an image-content copy; a plain file copy carries none.
+    /// The source file is preferred for storage so JPEG or HEIC encoding survives, with the pasteboard as fallback.
+    private static func imageData(from board: NSPasteboard, file: URL) -> Data? {
+        var fromBoard: Data?
+        for type in [NSPasteboard.PasteboardType.png, .tiff] {
+            if let bytes = board.data(forType: type), NSImage(data: bytes) != nil { fromBoard = bytes; break }
+        }
+        guard let format = fromBoard else { return nil }
+        if let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 64 * 1024 * 1024,
+           let bytes = try? Data(contentsOf: file), NSImage(data: bytes) != nil { return bytes }
+        return format
+    }
+    /// An image item keeps image formats only: the same pasteboard's file-url and filename list point into
+    /// the source application's own cache, and writing them back would hand receivers a path they cannot read.
+    private static func imageRepresentations(from board: NSPasteboard) throws -> [String: Data] {
+        var result: [String: Data] = [:]
+        var size = 0
+        for type in board.types ?? [] {
+            guard isWritableRepresentation(type.rawValue), UTType(type.rawValue)?.conforms(to: .image) == true else { continue }
+            guard let data = board.data(forType: type) else { continue }
+            size += data.count
+            guard size <= 64 * 1024 * 1024 else { throw ClipboardError.dataCorrupted }
+            result[type.rawValue] = data
+        }
+        return result
     }
     static func fileType(_ url: URL) -> ClipboardItemType {
         guard let type = UTType(filenameExtension: url.pathExtension) else { return .file }
