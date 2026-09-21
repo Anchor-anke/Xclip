@@ -138,9 +138,10 @@ codesign --force --sign "$CODE_SIGN_IDENTITY" "$SOURCE_APP/Contents/Helpers/Xcli
 codesign --force --sign "$CODE_SIGN_IDENTITY" "$SOURCE_APP/Contents/Helpers/CClipScriptRunner"
 codesign --force --sign "$CODE_SIGN_IDENTITY" --entitlements "$APP_ENTITLEMENTS" "$SOURCE_APP"
 codesign --verify --deep --strict "$SOURCE_APP"
-lipo "$SOURCE_APP/Contents/MacOS/Xclip" -verify_arch arm64 x86_64
-lipo "$SOURCE_APP/Contents/Helpers/CClipScriptRunner" -verify_arch arm64 x86_64
-lipo "$SOURCE_APP/Contents/Helpers/XclipWebP" -verify_arch arm64 x86_64
+# Current lipo only accepts one architecture per -verify_arch invocation.
+for binary in "$SOURCE_APP/Contents/MacOS/Xclip" "$SOURCE_APP/Contents/Helpers/CClipScriptRunner" "$SOURCE_APP/Contents/Helpers/XclipWebP"; do
+  for arch in arm64 x86_64; do lipo "$binary" -verify_arch "$arch"; done
+done
 BUILD_COMPLETE=1
 if [[ "$INSTALL" == 0 ]]; then
   printf '仅构建并验签；未替换安装或删除旧副本。\n'

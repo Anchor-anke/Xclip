@@ -34,7 +34,8 @@ for WEBP_ARCH in arm64 x86_64; do
         -o "$WEBP_ROOT/XclipWebP-$WEBP_ARCH"
 done
 xcrun lipo -create "$WEBP_ROOT/XclipWebP-arm64" "$WEBP_ROOT/XclipWebP-x86_64" -output "$WEBP_ROOT/XclipWebP"
-xcrun lipo "$WEBP_ROOT/XclipWebP" -verify_arch arm64 x86_64
+# Current lipo only accepts one architecture per -verify_arch invocation.
+for arch in arm64 x86_64; do xcrun lipo "$WEBP_ROOT/XclipWebP" -verify_arch "$arch"; done
 cp "$WEBP_SOURCE/COPYING" "$WEBP_ROOT/LICENSE-libwebp.txt"
 cp "$WEBP_SOURCE/PATENTS" "$WEBP_ROOT/PATENTS-libwebp.txt"
 "$WEBP_ROOT/XclipWebP" --version
