@@ -168,9 +168,11 @@ enum ClipboardSourceTests {
                    "Re-pasting a recorded chat image never points receivers at the deleted source cache path")
         let copiedFile = cache.appendingPathComponent("shared-photo.jpg")
         try bitmap.representation(using: .jpeg, properties: [:])!.write(to: copiedFile)
-        board.clearContents(); board.writeObjects([copiedFile as NSURL])
-        let file = try manager.capture(from: board, sourceApp: "com.synthetic.files", sourceAppName: "合成文件管理器")!
-        try expect(file.type == .image && file.fileURLs?.count == 1,
+        let fileBoard = NSPasteboard(name: .init("CClip.SourceTests.File.\(UUID().uuidString)"))
+        defer { fileBoard.releaseGlobally() }
+        fileBoard.clearContents(); fileBoard.writeObjects([copiedFile as NSURL])
+        let plainCopy = try ClipboardManager.readItem(from: fileBoard)
+        try expect(plainCopy?.type == .image && plainCopy?.fileURLs?.count == 1,
                    "A plain file copy of an image keeps file semantics because it carries no image formats")
     }
 }
